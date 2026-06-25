@@ -1,0 +1,2811 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>[PUBG M/JP] Competitor Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;background:#f0f2f5;color:#1a1a2e;min-height:100vh}
+
+/* ── HEADER ── */
+.app-header{background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);color:white;padding:0 24px;height:54px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,0.35)}
+.app-header h1{font-size:15px;font-weight:700;letter-spacing:.3px}
+.header-right{display:flex;gap:8px;align-items:center}
+.header-badge{background:rgba(255,255,255,.15);padding:3px 10px;border-radius:10px;font-size:11px;color:rgba(255,255,255,.8)}
+.header-btn{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:white;padding:5px 12px;border-radius:6px;font-size:11px;cursor:pointer;transition:background .15s}
+.header-btn:hover{background:rgba(255,255,255,.2)}
+.last-updated{font-size:10px;color:rgba(255,255,255,.4)}
+
+/* ── TABS ── */
+.tab-nav{background:white;border-bottom:1px solid #e5e7eb;display:flex;padding:0 24px;gap:0;position:sticky;top:54px;z-index:90}
+.tab-btn{padding:13px 20px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:500;color:#6b7280;border-bottom:3px solid transparent;transition:all .2s;white-space:nowrap}
+.tab-btn:hover{color:#374151}
+.tab-btn.active{color:#1a1a2e;border-bottom-color:#3b82f6;font-weight:700}
+.tab-content{display:none}
+.tab-content.active{display:block}
+
+/* ── CONTAINER ── */
+.container{max-width:1440px;margin:0 auto;padding:20px 24px}
+.section-title{font-size:13px;font-weight:700;color:#374151;margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;gap:6px}
+
+/* ── UPLOAD ── */
+.upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}
+.upload-card{background:white;border-radius:10px;padding:14px;border:1px solid #e5e7eb}
+.upload-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.upload-card-title{font-weight:700;font-size:13px}
+.source-badge{padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase}
+.source-badge.dataai{background:#dbeafe;color:#1d4ed8}
+.source-badge.sensortower{background:#dcfce7;color:#166534}
+.sub-tabs{display:flex;gap:4px;margin-bottom:8px}
+.sub-tab-btn{padding:3px 12px;border:1px solid #d1d5db;background:white;border-radius:20px;font-size:11px;cursor:pointer;color:#6b7280;transition:all .15s}
+.sub-tab-btn.active{background:#1a1a2e;color:white;border-color:#1a1a2e}
+.drop-zone{border:2px dashed #d1d5db;border-radius:8px;padding:18px 12px;text-align:center;cursor:pointer;transition:all .2s;background:#f9fafb}
+.drop-zone:hover,.drop-zone.dragging{border-color:#3b82f6;background:#eff6ff}
+.drop-zone.loaded{border-color:#22c55e;background:#f0fdf4}
+.drop-zone input[type="file"]{display:none}
+.dz-icon{font-size:24px;margin-bottom:6px}
+.dz-text{font-size:12px;color:#6b7280}
+.dz-sub{font-size:10px;color:#9ca3af;margin-top:3px}
+.file-status{margin-top:7px;font-size:11px;color:#9ca3af;line-height:1.6}
+.file-status.ok{color:#16a34a}
+.file-status.err{color:#dc2626}
+.stored-info{margin-top:8px;padding:7px 10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;font-size:11px;color:#166534;display:none}
+.stored-info.has-data{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.stored-info-text{line-height:1.5}
+.stored-info-text strong{font-weight:700}
+.clear-btns{display:flex;gap:4px;flex-shrink:0}
+.clear-btn{padding:2px 8px;background:white;border:1px solid #d1fae5;border-radius:4px;font-size:10px;color:#6b7280;cursor:pointer;transition:all .15s;white-space:nowrap}
+.clear-btn:hover{background:#fef2f2;border-color:#fca5a5;color:#dc2626}
+
+/* ── GAME CHIPS (data.ai) ── */
+.game-chips{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px}
+.game-chip{padding:3px 9px;border-radius:12px;font-size:10px;font-weight:700;background:#f3f4f6;color:#9ca3af;border:1px solid #e5e7eb;transition:all .2s;white-space:nowrap}
+.game-chip.loaded{background:#dcfce7;color:#166534;border-color:#bbf7d0}
+
+/* ── ST DUAL ZONES ── */
+.st-dual-zones{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px}
+.st-zone-label{font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+.drop-zone.compact{padding:10px 8px}
+.drop-zone.compact .dz-icon{font-size:20px;margin-bottom:4px}
+
+/* ── RANGE PICKER ── */
+.range-bar{background:white;border-radius:10px;padding:11px 18px;margin-bottom:16px;border:1px solid #e5e7eb;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.range-presets{display:flex;gap:4px;flex-wrap:wrap}
+.preset-btn{padding:4px 11px;border:1px solid #d1d5db;border-radius:20px;background:white;font-size:11px;font-weight:600;color:#6b7280;cursor:pointer;transition:all .15s;white-space:nowrap}
+.preset-btn:hover{border-color:#3b82f6;color:#1d4ed8}
+.preset-btn.active{background:#1a1a2e;color:white;border-color:#1a1a2e}
+.range-divider{width:1px;height:24px;background:#e5e7eb;flex-shrink:0}
+.range-inputs{display:flex;align-items:center;gap:8px}
+.range-input{padding:4px 9px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;font-family:inherit;color:#1a1a2e;width:130px}
+.range-input:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,.1)}
+.range-sep{font-size:12px;color:#9ca3af}
+.range-apply{padding:5px 14px;background:#3b82f6;color:white;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+.range-apply:hover{background:#2563eb}
+.range-export{padding:5px 14px;background:#10b981;color:white;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+.range-export:hover{background:#059669}
+.range-info{font-size:11px;color:#9ca3af;margin-left:auto}
+.range-info strong{color:#374151}
+
+/* ── CONTROLS BAR ── */
+.controls-bar{background:white;border-radius:10px;padding:12px 18px;margin-bottom:16px;border:1px solid #e5e7eb;display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.ctrl-group{display:flex;align-items:center;gap:8px}
+.ctrl-label{font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
+.toggle-group{display:flex;background:#f3f4f6;border-radius:6px;padding:2px}
+.tgl-btn{padding:5px 14px;border:none;background:none;border-radius:4px;font-size:12px;cursor:pointer;color:#6b7280;transition:all .15s;white-space:nowrap}
+.tgl-btn.active{background:white;color:#1a1a2e;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.check-label{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:#374151}
+.check-label input{cursor:pointer;accent-color:#3b82f6}
+
+/* ── CHART ── */
+.chart-section{background:white;border-radius:10px;padding:18px 20px;margin-bottom:16px;border:1px solid #e5e7eb}
+.chart-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px}
+.chart-title{font-size:14px;font-weight:700}
+.chart-legend{display:flex;gap:14px;flex-wrap:wrap}
+.legend-item{display:flex;align-items:center;gap:5px;font-size:11px}
+.legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.chart-wrapper{position:relative;height:300px}
+.chart-empty{height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#9ca3af;border:2px dashed #e5e7eb;border-radius:8px}
+.chart-empty-icon{font-size:40px;margin-bottom:10px}
+.chart-empty-text{font-size:13px}
+
+/* ── SUMMARY TABLE ── */
+.table-section{background:white;border-radius:10px;padding:18px 20px;margin-bottom:16px;border:1px solid #e5e7eb}
+.table-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px}
+.report-date-wrap{display:flex;align-items:center;gap:8px;font-size:12px;color:#6b7280}
+.report-date-wrap input{padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;font-family:inherit}
+.tbl-wrapper{overflow-x:auto}
+.sum-table{width:100%;border-collapse:collapse;font-size:12px;min-width:600px}
+.sum-table th{background:#1a1a2e;color:white;padding:9px 11px;text-align:center;font-weight:600;white-space:nowrap}
+.sum-table th:first-child{text-align:left;min-width:180px}
+.sum-table th.date-col{min-width:90px}
+.sum-table td{padding:8px 11px;border-bottom:1px solid #f3f4f6;text-align:center;white-space:nowrap}
+.sum-table td:first-child{text-align:left;font-weight:500;color:#374151}
+.sum-table tr:hover td{background:#fafafa}
+.sum-table tr.sep-row td{border-top:2px solid #e5e7eb;background:#f9fafb!important;height:6px;padding:0}
+.sum-table .growth-row td:first-child{font-weight:700;color:#1a1a2e}
+.sum-table .growth-row td{font-weight:700}
+.pos{color:#b91c1c!important;background:#fee2e2!important}
+.neg{color:#1d4ed8!important;background:#dbeafe!important}
+.neu{color:#6b7280!important}
+.no-data-msg{text-align:center;padding:40px;color:#9ca3af;font-size:13px}
+
+/* ── 4-CHART GRID ── */
+.charts-outer{margin-bottom:16px}
+.chart-row-header{background:#1a1a2e;color:white;text-align:center;padding:5px 14px;border-radius:7px;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
+.charts-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:8px}
+.chart-card{background:white;border-radius:10px;padding:14px 16px;border:1px solid #e5e7eb}
+.chart-card-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:8px;flex-wrap:wrap}
+.chart-card-title{font-size:12px;font-weight:700;color:#1a1a2e;white-space:nowrap}
+.chart-wrapper-sm{position:relative;height:230px}
+@media(max-width:900px){.charts-row{grid-template-columns:1fr}}
+
+/* ── MULTI-SOURCE TABLE ── */
+.ms-table{width:100%;border-collapse:collapse;font-size:11.5px;min-width:880px}
+.ms-table th{padding:7px 10px;text-align:center;font-weight:700;white-space:nowrap;border:1px solid rgba(255,255,255,.15)}
+.ms-table th.meta-h{background:#2d3748;color:white;text-align:left;min-width:170px}
+.ms-table th.date-h{background:#2d3748;color:white;min-width:85px}
+.ms-table th.dai-h{background:#1d4ed8;color:white}
+.ms-table th.st-h{background:#166534;color:white}
+.ms-table th.tlog-h{background:#b45309;color:#fef3c7}
+.ms-table th.sub-dai{background:#3b82f6;color:white}
+.ms-table th.sub-st{background:#22c55e;color:white}
+.ms-table th.sub-tlog{background:#f59e0b;color:#1a1a2e}
+.ms-table td{padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:right;white-space:nowrap;font-size:11.5px}
+.ms-table td.period-name{text-align:left;font-weight:600;color:#374151;text-align:left}
+.ms-table td.date-val{text-align:center;color:#6b7280;font-size:10px}
+.ms-table tr:hover td{background:#fafafa!important}
+.ms-table .sep-row td{border-top:2px solid #e5e7eb;height:4px;padding:0;background:#f9fafb!important}
+.ms-table .growth-row td{font-weight:700;text-align:center}
+.ms-table .growth-row td.period-name{text-align:left;color:#1a1a2e}
+.ms-table tr.hl-row td{background:#fefce8!important}
+.ms-table tr.hl-row td.period-name{font-weight:700;color:#92400e}
+.ms-table tr.selected-range-row td{background:#eff6ff!important;border-top:2px solid #3b82f6;border-bottom:2px solid #3b82f6}
+.ms-table tr.selected-range-row td.period-name{font-weight:700;color:#1d4ed8}
+
+/* ── MAPPING MODAL ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center}
+.modal{background:white;border-radius:12px;padding:24px;max-width:560px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal-title{font-size:15px;font-weight:700;margin-bottom:6px}
+.modal-desc{font-size:12px;color:#6b7280;margin-bottom:16px}
+.map-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.map-label{width:160px;font-size:12px;font-weight:600;flex-shrink:0}
+.map-select{flex:1;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;font-family:inherit}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;padding-top:12px;border-top:1px solid #f3f4f6}
+
+/* ── EVENTS TAB ── */
+.events-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px;gap:12px;flex-wrap:wrap}
+.filter-stack{display:flex;flex-direction:column;gap:8px;flex:1}
+.filter-row{display:flex;gap:6px;flex-wrap:wrap}
+.fchip{padding:5px 13px;border:1px solid #d1d5db;border-radius:20px;font-size:11px;cursor:pointer;background:white;color:#374151;transition:all .15s;white-space:nowrap}
+.fchip:hover{border-color:#3b82f6;color:#1d4ed8}
+.fchip.active{background:#1a1a2e;color:white;border-color:#1a1a2e}
+.fchip.g-ko.active{background:#3b82f6;border-color:#3b82f6}
+.fchip.g-cod.active{background:#f97316;border-color:#f97316}
+.fchip.g-df.active{background:#22c55e;border-color:#22c55e}
+.add-btn{padding:8px 16px;background:#1a1a2e;color:white;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;transition:background .2s;white-space:nowrap;flex-shrink:0}
+.add-btn:hover{background:#374151}
+.add-form{background:white;border-radius:10px;padding:18px 20px;margin-bottom:16px;border:1px solid #e5e7eb;border-top:3px solid #3b82f6}
+.form-grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:10px}
+.fg{display:flex;flex-direction:column;gap:4px}
+.fg.full{grid-column:1/-1}
+.fg.half{grid-column:span 2}
+.f-label{font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px}
+.f-input,.f-select,.f-textarea{padding:7px 9px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;font-family:inherit;color:#1a1a2e;transition:border-color .15s}
+.f-input:focus,.f-select:focus,.f-textarea:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1)}
+.f-textarea{resize:vertical;min-height:70px}
+.form-actions{display:flex;gap:8px;justify-content:flex-end}
+.events-count{font-size:11px;color:#9ca3af;margin-bottom:12px}
+
+/* Events Grid */
+.events-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+.ev-card{background:white;border-radius:10px;overflow:hidden;border:1px solid #e5e7eb;transition:box-shadow .2s}
+.ev-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.1)}
+.ev-top{padding:13px 15px 10px;border-left:4px solid var(--gc)}
+.ev-meta{display:flex;align-items:center;gap:6px;margin-bottom:7px;flex-wrap:wrap}
+.game-pill{padding:2px 7px;border-radius:4px;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
+.type-badge{padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;white-space:nowrap}
+.type-badge.collab{background:#fdf4ff;color:#9333ea;border:1px solid #e9d5ff}
+.type-badge.update{background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe}
+.type-badge.event{background:#fff7ed;color:#ea580c;border:1px solid #fed7aa}
+.ev-date{font-size:10px;color:#9ca3af;margin-left:auto;white-space:nowrap}
+.ev-title{font-size:13px;font-weight:700;margin-bottom:5px;line-height:1.4;color:#1a1a2e}
+.ev-desc{font-size:11px;color:#6b7280;line-height:1.6;margin-bottom:0}
+.ev-placeholder{width:100%;height:80px;display:flex;align-items:center;justify-content:center;font-size:28px;background:var(--gbg)}
+.ev-tags{display:flex;gap:4px;flex-wrap:wrap;padding:8px 15px 12px}
+.ev-tag{padding:2px 7px;background:#f3f4f6;border-radius:10px;font-size:9px;color:#6b7280}
+.ev-footer{padding:7px 15px;border-top:1px solid #f3f4f6;display:flex;justify-content:flex-end}
+.btn-icon{background:none;border:none;cursor:pointer;color:#9ca3af;font-size:13px;padding:3px 5px;border-radius:4px;transition:all .15s}
+.btn-icon:hover{background:#f3f4f6;color:#374151}
+.empty-state{text-align:center;padding:60px;color:#9ca3af;grid-column:1/-1}
+.empty-icon{font-size:44px;margin-bottom:10px}
+
+/* ── EVENT ANNOTATION LIST ── */
+.ev-anno-bar{background:white;border-radius:10px;margin-top:12px;border:1px solid #e5e7eb;overflow:hidden}
+.ev-anno-toggle{display:flex;align-items:center;gap:8px;padding:10px 16px;cursor:pointer;user-select:none;transition:background .15s}
+.ev-anno-toggle:hover{background:#f9fafb}
+.ev-anno-toggle.open{border-bottom:1px solid #e5e7eb}
+.ev-anno-title{font-size:12px;font-weight:700;color:#374151;flex:1}
+.ev-anno-count{font-size:11px;color:#9ca3af;background:#f3f4f6;padding:2px 8px;border-radius:10px}
+.ev-anno-arrow{font-size:10px;color:#6b7280;transition:transform .2s;margin-left:2px}
+.ev-anno-toggle.open .ev-anno-arrow{transform:rotate(180deg)}
+.ev-anno-actions{display:flex;gap:6px;padding:8px 14px;border-bottom:1px solid #f3f4f6}
+.ev-anno-btn{padding:3px 10px;border:1px solid #d1d5db;border-radius:5px;font-size:11px;background:white;cursor:pointer;color:#374151;font-weight:600}
+.ev-anno-btn:hover{background:#f3f4f6}
+.ev-anno-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:7px;padding:10px 14px}
+.ev-check-item{display:flex;align-items:flex-start;gap:8px;padding:7px 10px;border-radius:6px;border:1px solid #e5e7eb;cursor:pointer;transition:all .15s;background:white}
+.ev-check-item:hover{background:#f9fafb}
+.ev-check-item.selected{background:#eff6ff;border-color:#bfdbfe}
+.ev-check-item input[type="checkbox"]{margin-top:2px;flex-shrink:0;accent-color:var(--ev-c,#3b82f6);cursor:pointer}
+.ev-check-game{font-size:9px;font-weight:800;padding:1px 5px;border-radius:3px;white-space:nowrap}
+.ev-check-title{font-size:11px;font-weight:600;color:#1a1a2e;line-height:1.4;margin:2px 0}
+.ev-check-date{font-size:10px;color:#9ca3af}
+.ev-anno-empty{padding:20px 14px;color:#9ca3af;font-size:12px;text-align:center}
+
+/* ── BUTTONS ── */
+.btn-primary{padding:7px 16px;background:#3b82f6;color:white;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
+.btn-secondary{padding:7px 14px;background:white;color:#374151;border:1px solid #d1d5db;border-radius:6px;font-size:12px;cursor:pointer}
+
+/* ── TOAST ── */
+.toast{position:fixed;bottom:24px;right:24px;background:#1a1a2e;color:white;padding:10px 18px;border-radius:8px;font-size:12px;z-index:1000;transform:translateY(100px);opacity:0;transition:all .3s;max-width:340px}
+.toast.show{transform:translateY(0);opacity:1}
+.toast.ok{background:#16a34a}
+.toast.err{background:#dc2626}
+
+/* ── RESPONSIVE ── */
+@media(max-width:768px){
+  .upload-grid{grid-template-columns:1fr}
+  .form-grid{grid-template-columns:1fr 1fr}
+  .events-grid{grid-template-columns:1fr}
+  .controls-bar{gap:12px}
+}
+/* ── HIST ACCORDION ── */
+.hist-accordion{background:white;border:1px solid #e5e7eb;border-radius:10px;margin-bottom:8px;overflow:hidden}
+.hist-acc-hd{display:flex;align-items:center;justify-content:space-between;padding:11px 18px;cursor:pointer;user-select:none;transition:background .15s}
+.hist-acc-hd:hover{background:#f9fafb}
+.hist-acc-title{font-size:13px;font-weight:700;color:#374151}
+.hist-acc-bd{padding:0 18px 16px;overflow-x:auto}
+
+/* ════ SNAPSHOT SIDEBAR ════ */
+.snap-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:199;display:none;backdrop-filter:blur(1px)}
+.snap-overlay.show{display:block}
+.snap-sidebar{position:fixed;left:0;top:0;bottom:0;width:268px;background:#0f172a;color:#e2e8f0;z-index:200;transform:translateX(-100%);transition:transform .28s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column;box-shadow:6px 0 32px rgba(0,0,0,.4)}
+.snap-sidebar.open{transform:translateX(0)}
+.snap-sb-head{padding:16px 16px 12px;border-bottom:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.snap-sb-title{font-size:13px;font-weight:700;color:#f1f5f9;letter-spacing:.3px}
+.snap-close-btn{background:none;border:none;color:#64748b;cursor:pointer;font-size:17px;line-height:1;padding:4px 6px;border-radius:4px;transition:color .15s}
+.snap-close-btn:hover{color:#e2e8f0}
+.snap-save-area{padding:12px 14px;border-bottom:1px solid #1e293b;flex-shrink:0}
+.snap-label-input{width:100%;padding:7px 10px;background:#1e293b;border:1px solid #334155;border-radius:7px;color:#f1f5f9;font-size:12px;font-family:inherit;margin-bottom:8px;outline:none;box-sizing:border-box}
+.snap-label-input:focus{border-color:#3b82f6}
+.snap-save-btn{width:100%;padding:9px;background:#3b82f6;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;transition:background .15s}
+.snap-save-btn:hover{background:#2563eb}
+.snap-list-wrap{flex:1;overflow-y:auto;padding:10px 10px 16px}
+.snap-item{background:#1e293b;border-radius:9px;padding:11px 13px;margin-bottom:8px;cursor:pointer;border:2px solid transparent;transition:all .15s;user-select:none}
+.snap-item:hover{border-color:#334155;background:#263349}
+.snap-item.active-snap{border-color:#3b82f6;background:#1e3a5f}
+.snap-item-label{font-size:13px;font-weight:700;color:#f1f5f9;margin-bottom:3px}
+.snap-item-date{font-size:10px;color:#475569;margin-bottom:4px}
+.snap-item-meta{font-size:10px;color:#64748b;line-height:1.5}
+.snap-item-foot{display:flex;justify-content:flex-end;margin-top:8px}
+.snap-del-btn{background:none;border:none;cursor:pointer;color:#475569;font-size:11px;padding:3px 7px;border-radius:4px;transition:color .15s}
+.snap-del-btn:hover{color:#ef4444;background:rgba(239,68,68,.1)}
+.snap-empty{color:#475569;font-size:12px;text-align:center;padding:32px 12px;line-height:1.7}
+.snap-toggle-btn{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);color:#fff;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;transition:background .15s;white-space:nowrap}
+.snap-toggle-btn:hover{background:rgba(255,255,255,.2)}
+.snap-section-label{font-size:10px;font-weight:700;color:#334155;text-transform:uppercase;letter-spacing:.6px;padding:4px 4px 8px;margin-top:2px}
+</style>
+</head>
+<body>
+<div class="snap-overlay" id="snapOverlay" onclick="toggleSnapSidebar()"></div>
+<aside class="snap-sidebar" id="snapSidebar">
+  <div class="snap-sb-head">
+    <span class="snap-sb-title">&#128248; Monthly Snapshots</span>
+    <button class="snap-close-btn" onclick="toggleSnapSidebar()">&#10005;</button>
+  </div>
+  <div class="snap-save-area">
+    <input class="snap-label-input" id="snapLabelInput" placeholder="&#12473;&#12490;&#12483;&#12503;&#12471;&#12519;&#12483;&#12488;&#21517; (&#20363;: 2026&#24180;05&#26376;)">
+    <button class="snap-save-btn" onclick="saveSnap()">&#128190; &#54788;&#51116; &#49345;&#53468; &#51200;&#51109;</button>
+  </div>
+  <div class="snap-list-wrap">
+    <div class="snap-section-label">&#51ú&#51109;&#46108; &#49828;&#45205;&#49836;</div>
+    <div id="snapList"><div class="snap-empty">&#50500;&#51649; &#51200;&#51109;&#46108; &#49828;&#45205;&#49836;&#51060; &#50630;&#49845;&#45768;&#45796;.</div></div>
+  </div>
+</aside>
+
+
+<!-- ══════════════════ HEADER ══════════════════ -->
+<header class="app-header">
+  <div style="display:flex;align-items:center;gap:10px">
+    <h1>[PUBG M/JP] Competitor Dashboard</h1>
+    <span class="header-badge">JP Market</span>
+  </div>
+  <div class="header-right">
+    <span class="last-updated" id="lastUpdated"></span>
+    <button class="snap-toggle-btn" onclick="toggleSnapSidebar()">📸 스냅샷</button>
+    <button class="header-btn" style="background:rgba(239,68,68,.3);border-color:rgba(239,68,68,.5)" onclick="clearAllData()">🗑️ 데이터 초기화</button>
+    <button class="header-btn" onclick="resetEvents()">🔄 이벤트 초기화</button>
+  </div>
+</header>
+
+<!-- ══════════════════ TAB NAV ══════════════════ -->
+<nav class="tab-nav">
+  <button class="tab-btn active" onclick="showTab('dashboard',this)">📊 대시보드</button>
+  <button class="tab-btn" onclick="showTab('events',this)">🎮 이벤트 &amp; 업데이트</button>
+</nav>
+
+<!-- ══════════════════ MAIN ══════════════════ -->
+<div class="container">
+
+  <!-- ════════ DASHBOARD TAB ════════ -->
+  <div id="tab-dashboard" class="tab-content active">
+
+    <!-- Upload -->
+    <div class="section-title">📂 데이터 업로드</div>
+    <div class="upload-grid">
+
+      <!-- data.ai -->
+      <div class="upload-card">
+        <div class="upload-card-header">
+          <span class="upload-card-title">data.ai</span>
+          <span class="source-badge dataai">data.ai</span>
+        </div>
+        <!-- 게임별 업로드 상태 칩 -->
+        <div class="game-chips" id="chips-dataai">
+          <span class="game-chip" id="chip-dataai-knivesout">⬜ Knives Out</span>
+          <span class="game-chip" id="chip-dataai-codm">⬜ CoD Mobile</span>
+          <span class="game-chip" id="chip-dataai-deltaforce">⬜ Delta Force</span>
+          <span class="game-chip" id="chip-dataai-pubgm">⬜ PUBG Mobile</span>
+        </div>
+        <div class="drop-zone" id="dz-dataai"
+          onclick="document.getElementById('fi-dataai').click()"
+          ondragover="onDragOver(event)"
+          ondragleave="onDragLeave(event,'dz-dataai')"
+          ondrop="onDropMulti(event,'dataai')">
+          <div class="dz-icon">📊</div>
+          <div class="dz-text">게임별 CSV 파일 업로드 (다중 선택 가능)</div>
+          <div class="dz-sub">타이틀별 파일 1개씩 · Traffic + Revenue 자동 처리</div>
+          <input type="file" id="fi-dataai" accept=".csv" multiple onchange="onFileInputMulti(event,'dataai')">
+        </div>
+        <div class="file-status" id="st-dataai">파일을 업로드하면 기존 저장 데이터에 병합됩니다</div>
+        <div class="stored-info" id="si-dataai">
+          <div class="stored-info-text" id="si-dataai-text"></div>
+          <div class="clear-btns">
+            <button class="clear-btn" onclick="clearData('dataai','traffic')">Traffic 삭제</button>
+            <button class="clear-btn" onclick="clearData('dataai','revenue')">Revenue 삭제</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sensor Tower -->
+      <div class="upload-card">
+        <div class="upload-card-header">
+          <span class="upload-card-title">Sensor Tower</span>
+          <span class="source-badge sensortower">Sensor Tower</span>
+        </div>
+        <!-- DAU / Revenue 분리 업로드 존 -->
+        <div class="st-dual-zones">
+          <div>
+            <div class="st-zone-label">👥 DAU 파일</div>
+            <div class="drop-zone compact" id="dz-st-dau"
+              onclick="document.getElementById('fi-st-dau').click()"
+              ondragover="onDragOver(event)"
+              ondragleave="onDragLeave(event,'dz-st-dau')"
+              ondrop="onDropST(event,'dau')">
+              <div class="dz-icon">📈</div>
+              <div class="dz-text">DAU 파일 드래그</div>
+              <div class="dz-sub">전체 게임 포함 CSV</div>
+              <input type="file" id="fi-st-dau" accept=".csv" onchange="onFileInputST(event,'dau')">
+            </div>
+            <div class="file-status" id="fs-st-dau">미업로드</div>
+          </div>
+          <div>
+            <div class="st-zone-label">💰 Revenue 파일</div>
+            <div class="drop-zone compact" id="dz-st-rev"
+              onclick="document.getElementById('fi-st-rev').click()"
+              ondragover="onDragOver(event)"
+              ondragleave="onDragLeave(event,'dz-st-rev')"
+              ondrop="onDropST(event,'rev')">
+              <div class="dz-icon">💵</div>
+              <div class="dz-text">Revenue 파일 드래그</div>
+              <div class="dz-sub">전체 게임 포함 CSV</div>
+              <input type="file" id="fi-st-rev" accept=".csv" onchange="onFileInputST(event,'rev')">
+            </div>
+            <div class="file-status" id="fs-st-rev">미업로드</div>
+          </div>
+        </div>
+        <div class="stored-info" id="si-sensortower">
+          <div class="stored-info-text" id="si-sensortower-text"></div>
+          <div class="clear-btns">
+            <button class="clear-btn" onclick="clearData('sensortower','traffic')">DAU 삭제</button>
+            <button class="clear-btn" onclick="clearData('sensortower','revenue')">Revenue 삭제</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Range Picker -->
+    <div class="range-bar">
+      <div class="range-presets">
+        <button class="preset-btn" id="preset-all"  onclick="setPreset('all')">전체</button>
+        <button class="preset-btn active" id="preset-1m"   onclick="setPreset('1m')">최근 1개월</button>
+        <button class="preset-btn"        id="preset-3m"   onclick="setPreset('3m')">최근 3개월</button>
+        <button class="preset-btn"        id="preset-6m"   onclick="setPreset('6m')">최근 6개월</button>
+        <button class="preset-btn"        id="preset-ytd"  onclick="setPreset('ytd')">올해</button>
+        <button class="preset-btn"        id="preset-custom" style="display:none">직접 설정</button>
+      </div>
+      <div class="range-divider"></div>
+      <div class="range-inputs">
+        <input type="date" class="range-input" id="rangeStart" onchange="onRangeInputChange()">
+        <span class="range-sep">~</span>
+        <input type="date" class="range-input" id="rangeEnd"   onchange="onRangeInputChange()">
+        <button class="range-apply" onclick="applyRange()">적용</button>
+        <button class="range-export" onclick="exportRangeCSV()">📥 CSV 추출</button>
+        <button class="range-export" style="background:#8b5cf6" onmouseover="this.style.background='#7c3aed'" onmouseout="this.style.background='#8b5cf6'" onclick="requestEventResearch()">🔍 이벤트 조사</button>
+      </div>
+      <span class="range-info" id="rangeInfo"></span>
+    </div>
+
+    <!-- 4-Chart Grid -->
+    <div class="charts-outer">
+      <!-- Traffic Row -->
+      <div class="chart-row-header">Traffic</div>
+      <div class="charts-row">
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <span class="chart-card-title">Competitor Active User (data.ai)</span>
+            <div class="chart-legend" id="legend-dataai-traffic"></div>
+            <div style="display:flex;align-items:center;gap:4px;font-size:11px;color:#6b7280">
+              <span>Y최고:</span>
+              <input type="number" id="ymax-dataai-traffic" placeholder="자동"
+                style="width:80px;padding:2px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:11px;font-family:inherit"
+                onchange="setYMax('dataai-traffic', this.value)">
+            </div>
+          </div>
+          <div class="chart-wrapper-sm">
+            <div class="chart-empty" id="empty-dataai-traffic"><div class="chart-empty-icon">📈</div><div class="chart-empty-text">데이터 없음</div></div>
+            <canvas id="canvas-dataai-traffic" style="display:none"></canvas>
+          </div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <span class="chart-card-title">Competitor Active User (Sensor Tower)</span>
+            <div class="chart-legend" id="legend-sensortower-traffic"></div>
+            <div style="display:flex;align-items:center;gap:4px;font-size:11px;color:#6b7280">
+              <span>Y최고:</span>
+              <input type="number" id="ymax-sensortower-traffic" placeholder="자동"
+                style="width:80px;padding:2px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:11px;font-family:inherit"
+                onchange="setYMax('sensortower-traffic', this.value)">
+            </div>
+          </div>
+          <div class="chart-wrapper-sm">
+            <div class="chart-empty" id="empty-sensortower-traffic"><div class="chart-empty-icon">📡</div><div class="chart-empty-text">데이터 없음</div></div>
+            <canvas id="canvas-sensortower-traffic" style="display:none"></canvas>
+          </div>
+        </div>
+      </div>
+      <!-- Revenue Row -->
+      <div class="chart-row-header" style="margin-top:6px">Revenue</div>
+      <div class="charts-row">
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <span class="chart-card-title">Competitor Revenue (data.ai)</span>
+            <div class="chart-legend" id="legend-dataai-revenue"></div>
+            <div style="display:flex;align-items:center;gap:4px;font-size:11px;color:#6b7280">
+              <span>Y최고:</span>
+              <input type="number" id="ymax-dataai-revenue" placeholder="자동"
+                style="width:80px;padding:2px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:11px;font-family:inherit"
+                onchange="setYMax('dataai-revenue', this.value)">
+            </div>
+          </div>
+          <div class="chart-wrapper-sm">
+            <div class="chart-empty" id="empty-dataai-revenue"><div class="chart-empty-icon">💰</div><div class="chart-empty-text">데이터 없음</div></div>
+            <canvas id="canvas-dataai-revenue" style="display:none"></canvas>
+          </div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <span class="chart-card-title">Competitor Revenue (Sensor Tower)</span>
+            <div class="chart-legend" id="legend-sensortower-revenue"></div>
+            <div style="display:flex;align-items:center;gap:4px;font-size:11px;color:#6b7280">
+              <span>Y최고:</span>
+              <input type="number" id="ymax-sensortower-revenue" placeholder="자동"
+                style="width:80px;padding:2px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:11px;font-family:inherit"
+                onchange="setYMax('sensortower-revenue', this.value)">
+            </div>
+          </div>
+          <div class="chart-wrapper-sm">
+            <div class="chart-empty" id="empty-sensortower-revenue"><div class="chart-empty-icon">📡</div><div class="chart-empty-text">데이터 없음</div></div>
+            <canvas id="canvas-sensortower-revenue" style="display:none"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 이벤트 마킹 패널 -->
+    <div class="ev-anno-bar" id="evAnnoBar" style="display:none;margin-bottom:16px">
+      <div class="ev-anno-toggle" id="evAnnoToggle" onclick="toggleEvAnno()">
+        <span class="ev-anno-title">📅 기간 내 이벤트 마킹</span>
+        <span class="ev-anno-count" id="evAnnoCount">0건</span>
+        <span style="font-size:11px;color:#9ca3af;margin-left:6px">선택 항목이 그래프에 점선으로 표시됩니다</span>
+        <span class="ev-anno-arrow" id="evAnnoArrow">▼</span>
+      </div>
+      <div id="evAnnoBody" style="display:none">
+        <div class="ev-anno-actions">
+          <button class="ev-anno-btn" onclick="selectAllAnno()">전체 선택</button>
+          <button class="ev-anno-btn" onclick="clearAllAnno()">전체 해제</button>
+          <button class="ev-anno-btn" style="margin-left:auto;background:#1d4ed8;color:white;border-color:#1d4ed8" onclick="toggleInlineAddForm()">+ 이벤트 추가</button>
+        </div>
+        <div id="inlineAddForm" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin:8px 0">
+          <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:10px">새 이벤트 추가</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+            <div>
+              <div style="font-size:10px;color:#6b7280;margin-bottom:3px">게임</div>
+              <select id="iGame" style="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;font-family:inherit">
+                <option value="knivesout">Knives Out</option>
+                <option value="codm">CoD Mobile</option>
+                <option value="deltaforce">Delta Force</option>
+              </select>
+            </div>
+            <div>
+              <div style="font-size:10px;color:#6b7280;margin-bottom:3px">유형</div>
+              <select id="iType" style="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;font-family:inherit">
+                <option value="collab">🤝 콜라보</option>
+                <option value="event">🎯 이벤트</option>
+                <option value="update">🔄 업데이트</option>
+              </select>
+            </div>
+            <div>
+              <div style="font-size:10px;color:#6b7280;margin-bottom:3px">시작일</div>
+              <input type="date" id="iStart" style="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;font-family:inherit">
+            </div>
+            <div>
+              <div style="font-size:10px;color:#6b7280;margin-bottom:3px">종료일 (선택)</div>
+              <input type="date" id="iEnd" style="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;font-family:inherit">
+            </div>
+          </div>
+          <div style="margin-bottom:8px">
+            <div style="font-size:10px;color:#6b7280;margin-bottom:3px">이벤트명 *</div>
+            <input type="text" id="iTitle" placeholder="예: ホロライブ コラボ 第5弾" style="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;font-family:inherit">
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button onclick="toggleInlineAddForm()" style="padding:5px 14px;border:1px solid #d1d5db;background:white;border-radius:6px;font-size:12px;cursor:pointer">취소</button>
+            <button onclick="addInlineEvent()" style="padding:5px 14px;background:#1d4ed8;color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600">추가</button>
+          </div>
+        </div>
+        <div class="ev-anno-list" id="evAnnoList"></div>
+      </div>
+    </div>
+
+    <!-- Summary Tables -->
+    <div class="table-section">
+      <div class="table-header">
+        <div class="section-title" style="margin-bottom:0">📋 기간별 요약</div>
+      </div>
+      <div class="range-bar" style="margin-bottom:10px">
+        <div class="range-presets">
+          <button class="preset-btn"        id="tbl-preset-all"    onclick="setTablePreset('all')">전체</button>
+          <button class="preset-btn active" id="tbl-preset-1m"     onclick="setTablePreset('1m')">최근 1개월</button>
+          <button class="preset-btn"        id="tbl-preset-3m"     onclick="setTablePreset('3m')">최근 3개월</button>
+          <button class="preset-btn"        id="tbl-preset-6m"     onclick="setTablePreset('6m')">최근 6개월</button>
+          <button class="preset-btn"        id="tbl-preset-ytd"    onclick="setTablePreset('ytd')">올해</button>
+          <button class="preset-btn"        id="tbl-preset-custom" style="display:none">직접 설정</button>
+        </div>
+        <div class="range-divider"></div>
+        <div class="range-inputs">
+          <input type="date" class="range-input" id="tableRangeStart" onchange="onTableRangeInputChange()">
+          <span class="range-sep">~</span>
+          <input type="date" class="range-input" id="tableRangeEnd"   onchange="onTableRangeInputChange()">
+          <button class="range-apply" onclick="applyTableRange()">적용</button>
+        </div>
+      </div>
+      <div id="summaryTables">
+        <div class="no-data-msg">데이터를 업로드하면 기간별 비교 테이블이 표시됩니다</div>
+      </div>
+    </div>
+
+    <!-- ─── 최근 2년 지표 원본 ─── -->
+    <div id="historicalSection" style="margin-top:20px;display:none">
+      <div class="section-title" style="margin-bottom:10px">📊 최근 2년 지표 원본 데이터</div>
+      <!-- Daily -->
+      <div class="hist-accordion">
+        <div class="hist-acc-hd" onclick="toggleHistAcc('daily')">
+          <span class="hist-acc-title">📅 데일리 지표</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="range-export" onclick="event.stopPropagation();exportHistCSV('daily')" style="font-size:11px;padding:3px 10px">⬇ CSV</button>
+            <span id="hist-arrow-daily" style="font-size:11px;color:#9ca3af">▼</span>
+          </div>
+        </div>
+        <div id="hist-body-daily" class="hist-acc-bd" style="display:none"><div id="hist-tbl-daily"></div></div>
+      </div>
+      <!-- Monthly -->
+      <div class="hist-accordion">
+        <div class="hist-acc-hd" onclick="toggleHistAcc('monthly')">
+          <span class="hist-acc-title">📆 먼슬리 지표</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="range-export" onclick="event.stopPropagation();exportHistCSV('monthly')" style="font-size:11px;padding:3px 10px">⬇ CSV</button>
+            <span id="hist-arrow-monthly" style="font-size:11px;color:#9ca3af">▼</span>
+          </div>
+        </div>
+        <div id="hist-body-monthly" class="hist-acc-bd" style="display:none"><div id="hist-tbl-monthly"></div></div>
+      </div>
+      <!-- Quarterly -->
+      <div class="hist-accordion">
+        <div class="hist-acc-hd" onclick="toggleHistAcc('quarterly')">
+          <span class="hist-acc-title">📊 쿼터리 지표</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="range-export" onclick="event.stopPropagation();exportHistCSV('quarterly')" style="font-size:11px;padding:3px 10px">⬇ CSV</button>
+            <span id="hist-arrow-quarterly" style="font-size:11px;color:#9ca3af">▼</span>
+          </div>
+        </div>
+        <div id="hist-body-quarterly" class="hist-acc-bd" style="display:none"><div id="hist-tbl-quarterly"></div></div>
+      </div>
+      <!-- Yearly -->
+      <div class="hist-accordion">
+        <div class="hist-acc-hd" onclick="toggleHistAcc('yearly')">
+          <span class="hist-acc-title">📈 이얼리 지표</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="range-export" onclick="event.stopPropagation();exportHistCSV('yearly')" style="font-size:11px;padding:3px 10px">⬇ CSV</button>
+            <span id="hist-arrow-yearly" style="font-size:11px;color:#9ca3af">▼</span>
+          </div>
+        </div>
+        <div id="hist-body-yearly" class="hist-acc-bd" style="display:none"><div id="hist-tbl-yearly"></div></div>
+      </div>
+    </div>
+  </div><!-- /tab-dashboard -->
+
+  <!-- ════════ EVENTS TAB ════════ -->
+  <div id="tab-events" class="tab-content">
+
+    <div class="events-top">
+      <div class="filter-stack">
+        <div class="filter-row" id="gFilter">
+          <button class="fchip active" data-g="all" onclick="setFilter('game','all',this)">전체 게임</button>
+          <button class="fchip g-ko" data-g="knivesout" onclick="setFilter('game','knivesout',this)">🔵 Knives Out</button>
+          <button class="fchip g-cod" data-g="codm" onclick="setFilter('game','codm',this)">🟠 CoD Mobile</button>
+          <button class="fchip g-df" data-g="deltaforce" onclick="setFilter('game','deltaforce',this)">🟢 Delta Force</button>
+        </div>
+        <div class="filter-row" id="tFilter">
+          <button class="fchip active" data-t="all" onclick="setFilter('type','all',this)">모든 유형</button>
+          <button class="fchip" data-t="collab" onclick="setFilter('type','collab',this)">🤝 콜라보</button>
+          <button class="fchip" data-t="update" onclick="setFilter('type','update',this)">🔄 업데이트</button>
+          <button class="fchip" data-t="event" onclick="setFilter('type','event',this)">🎯 이벤트</button>
+        </div>
+        <div class="filter-row" id="evDateFilter" style="align-items:center;gap:6px;flex-wrap:wrap;">
+          <span style="font-size:12px;color:#6b7280;font-weight:500;">📅 기간</span>
+          <input type="date" id="evDateFrom" oninput="setEvDateFilter()" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;font-family:inherit;">
+          <span style="font-size:12px;color:#9ca3af;">~</span>
+          <input type="date" id="evDateTo" oninput="setEvDateFilter()" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;font-family:inherit;">
+          <button class="fchip" onclick="setEvThisMonth()" style="font-size:11px;">이번 달</button>
+          <button class="fchip" onclick="clearEvDate()" style="font-size:11px;">전체 기간</button>
+        </div>
+      </div>
+      <button class="add-btn" onclick="toggleAddForm()">+ 이벤트 추가</button>
+    </div>
+
+    <!-- Add Event Form -->
+    <div class="add-form" id="addForm" style="display:none">
+      <div style="font-size:13px;font-weight:700;margin-bottom:14px">새 이벤트 추가</div>
+      <div class="form-grid">
+        <div class="fg">
+          <label class="f-label">게임</label>
+          <select class="f-select" id="nGame">
+            <option value="knivesout">Knives Out</option>
+            <option value="codm">Call of Duty: Mobile</option>
+            <option value="deltaforce">Delta Force</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label class="f-label">유형</label>
+          <select class="f-select" id="nType">
+            <option value="collab">🤝 콜라보</option>
+            <option value="update">🔄 업데이트</option>
+            <option value="event">🎯 이벤트</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label class="f-label">시작일</label>
+          <input type="date" class="f-input" id="nStart">
+        </div>
+        <div class="fg">
+          <label class="f-label">종료일 (선택)</label>
+          <input type="date" class="f-input" id="nEnd">
+        </div>
+        <div class="fg full">
+          <label class="f-label">이벤트명</label>
+          <input type="text" class="f-input" id="nTitle" placeholder="예: ホロライブ コラボ 第4弾">
+        </div>
+        <div class="fg full">
+          <label class="f-label">설명</label>
+          <textarea class="f-textarea" id="nDesc" placeholder="이벤트 내용을 입력하세요..."></textarea>
+        </div>
+        <div class="fg half">
+          <label class="f-label">이미지 URL (선택)</label>
+          <input type="url" class="f-input" id="nImg" placeholder="https://...">
+        </div>
+        <div class="fg half">
+          <label class="f-label">태그 (쉼표 구분)</label>
+          <input type="text" class="f-input" id="nTags" placeholder="VTuber, コラボ, 無料ガチャ">
+        </div>
+        <div class="fg full">
+          <label class="f-label">참조 URL (선택)</label>
+          <input type="url" class="f-input" id="nSource" placeholder="https://x.com/...">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn-secondary" onclick="toggleAddForm()">취소</button>
+        <button class="btn-primary" onclick="addEvent()">추가</button>
+      </div>
+    </div>
+
+    <div class="events-count" id="evCount"></div>
+    <div class="events-grid" id="evGrid"></div>
+  </div><!-- /tab-events -->
+
+</div><!-- /container -->
+
+<!-- Column Mapping Modal -->
+<div class="modal-overlay" id="mapModal" style="display:none" onclick="if(event.target===this)closeMapModal()">
+  <div class="modal">
+    <div class="modal-title">📋 열 매핑 설정</div>
+    <p class="modal-desc">날짜 열 또는 게임 열을 자동 감지하지 못했습니다. 파일의 각 열을 수동으로 매핑해주세요.</p>
+    <div id="mapContent"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeMapModal()">취소</button>
+      <button class="btn-primary" onclick="applyMapping()">적용</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="editEvModal" style="display:none" onclick="if(event.target===this)closeEditEvModal()">
+  <div class="modal" style="max-width:560px;width:100%">
+    <div class="modal-title">✏️ 이벤트 수정</div>
+    <div class="form-grid" style="margin-top:12px">
+      <div class="fg">
+        <label class="f-label">게임</label>
+        <select class="f-select" id="eGame">
+          <option value="knivesout">Knives Out</option>
+          <option value="codm">Call of Duty: Mobile</option>
+          <option value="deltaforce">Delta Force</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label class="f-label">유형</label>
+        <select class="f-select" id="eType">
+          <option value="collab">🤝 콜라보</option>
+          <option value="update">🔄 업데이트</option>
+          <option value="event">🎯 이벤트</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label class="f-label">시작일</label>
+        <input type="date" class="f-input" id="eStart">
+      </div>
+      <div class="fg">
+        <label class="f-label">종료일</label>
+        <input type="date" class="f-input" id="eEnd">
+      </div>
+      <div class="fg full">
+        <label class="f-label">이벤트명</label>
+        <input type="text" class="f-input" id="eTitle">
+      </div>
+      <div class="fg full">
+        <label class="f-label">설명</label>
+        <textarea class="f-textarea" id="eDesc"></textarea>
+      </div>
+      <div class="fg full">
+        <label class="f-label">이미지 (파일 업로드 또는 URL)</label>
+        <input type="file" class="f-input" id="eImgFile" accept="image/*" onchange="previewEditImg(this)" style="margin-bottom:6px">
+        <input type="url" class="f-input" id="eImgUrl" placeholder="https://... (URL 직접 입력)">
+        <div id="eImgPreview" style="margin-top:8px"></div>
+      </div>
+      <div class="fg full">
+        <label class="f-label">태그 (쉼표 구분)</label>
+        <input type="text" class="f-input" id="eTags">
+      </div>
+      <div class="fg full">
+        <label class="f-label">참조 URL (선택)</label>
+        <input type="url" class="f-input" id="eSource" placeholder="https://x.com/...">
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn-secondary" onclick="closeEditEvModal()">취소</button>
+      <button class="btn-primary" onclick="saveEditEv()">저장</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ══════════════════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════════════════ -->
+<script>
+/* ─── GAME CONFIG ─── */
+const GAMES = {
+  knivesout:   { name:'Knives Out',         jp:'荒野行動',        color:'#3b82f6', bg:'#dbeafe' },
+  codm:        { name:'Call of Duty: Mobile', jp:'CoD Mobile',   color:'#f97316', bg:'#ffedd5' },
+  deltaforce:  { name:'Delta Force',         jp:'デルタフォース', color:'#22c55e', bg:'#dcfce7' },
+  pubgm:       { name:'PUBG Mobile',         jp:'PUBG Mobile',   color:'#facc15', bg:'#fef08a' }
+};
+const GAME_PATTERNS = {
+  knivesout:  ['knives out','荒野行動','knivesout','knives_out'],
+  codm:       ['call of duty','cod mobile','codm','cod:mobile','callofduty'],
+  deltaforce: ['delta force','deltaforce','delta_force'],
+  pubgm:      ['pubg mobile','pubgm','pubg_mobile','pubg mobile(t-log)','pubg(t-log)']
+};
+// data.ai Bundle ID / Package Name 정확 매칭 (앱명보다 우선)
+const GAME_BUNDLE_IDS = {
+  knivesout:  ['com.netease.ko'],
+  codm:       ['com.activision.callofduty.shooter'],
+  deltaforce: ['com.proxima.dfm'],
+  pubgm:      ['com.pubg.krmobile','com.tencent.ig','com.rekoo.pubgm']
+};
+const DATE_PATTERNS = ['date','日付','day','날짜','time','period','week'];
+
+/* ─── INITIAL EVENTS (pre-researched) ─── */
+const SEED_EVENTS = [
+  {id:1,game:'knivesout',date:'2026-02-09',endDate:'2026-02-23',type:'event',
+   title:'ウマい感謝祭 第2弾',
+   desc:'「ウマい感謝祭 第2弾」開催。期間限定ログインボーナス・特別ミッション実装。2月上旬のDAU低迷を底打ちさせ13%のMoM上昇へ寄与した起点施策。',
+   tags:['感謝祭','ログインボーナス','DAU促進'],source:'https://x.com/GAME_KNIVES_OUT'},
+  {id:2,game:'knivesout',date:'2026-03-01',endDate:'2026-03-23',type:'collab',
+   title:'ホロライブ コラボ 第3弾（バンド編）',
+   desc:'猫又おかゆ・戌神ころね(初登場)・兎田ぺこら・白銀ノエル・ラプラス・ダークネス5人がバンド結成テーマで登場。SP銃器・SP衣装「双兎の遊戯」・生歌ボイスパック「FLOWER～hololive collaboration ver.～」実装。最大50連無料ガチャ提供。',
+   tags:['Hololive','VTuber','無料50連','音楽コラボ','SP衣装'],source:'https://x.com/GAME_KNIVES_OUT'},
+  {id:3,game:'knivesout',date:'2026-03-20',endDate:'2026-03-26',type:'event',
+   title:'東京喰種 コラボ第6弾 事前施策',
+   desc:'コラボ開始7日前から毎日0時に無料10連ガチャ配布（7日間/最気に入り1回を3/27受領の引き直し方式）。旧コラボ金色アイテム保有者への追加10連無料配布。3/20〜3/26に事前予約報酬受取イベント並行実施。コラボ前からDAUを積み上げる設計が効果的に機能。',
+   tags:['引き直しガチャ','事前施策','無料ガチャ','リテンション'],source:'https://x.com/GAME_KNIVES_OUT'},
+  {id:4,game:'knivesout',date:'2026-03-27',endDate:'2026-04-17',type:'collab',
+   title:'東京喰種 コラボ 第6弾',
+   desc:'金木研・霧嶋董香・月山習が登場。コラボ金枠確定「引き直しガチャ」(毎日0時10連/7日間)、新規EX伝説ガチャ・EX伝説ガチャ複数開設。第2〜5弾歴代コラボアイテム期間限定復刻。MoM +22%の売上増・MoM +13%のDAU増を達成。',
+   tags:['東京喰種','アニメコラボ','EX伝説ガチャ','引き直しガチャ','復刻'],source:'https://x.com/GAME_KNIVES_OUT'},
+  {id:5,game:'knivesout',date:'2026-04-25',endDate:'2026-05-08',type:'collab',
+   title:'にじさんじ コラボ 第4弾',
+   desc:'笹木咲・葛葉・リゼ・ヘルエスタ・星川サラの4名が登場。葛葉のSP衣装（限定デザイン）を新規実装。コラボガチャ・期間限定ミッション・特典配布イベント同時開催。',
+   tags:['にじさんじ','VTuber','SP衣装','葛葉'],source:'https://x.com/GAME_KNIVES_OUT'},
+  {id:6,game:'codm',date:'2026-03-19',type:'update',
+   title:'Season 3 "Paranoia" ローンチ',
+   desc:'新シーズン「Paranoia」開幕(3/19)。新モードDMZ: Recon Quick Play追加、新武器MX Guardianショットガン実装。Pop Team Epic(ポプ子・ピピ美)コラボ＆NieR: Automataコラボ同時展開。コズミック・ドロウ4種＋ポッピングエピック・ストロングボックス(武器設計図・イモート・車両スキン等10種以上)販売開始。MoM +11%の売上増。',
+   tags:['新シーズン','Pop Team Epic','NieR:Automata','新モード','新武器'],source:'https://www.callofduty.com/ja/blog/mobile'},
+  {id:7,game:'codm',date:'2026-03-19',endDate:'2026-04-18',type:'event',
+   title:'Spring Invasion イベント',
+   desc:'シーズン3スプリングイベント。高品質オペレータースキン・コスメティクスを無料獲得できるグラインダブルイベント。各ドロウにレジェンド武器設計図＋エピックオペレータースキンセット構成。',
+   tags:['フリーイベント','Spring','グラインド','期間限定スキン'],source:'https://www.callofduty.com/ja/blog/mobile'},
+  {id:8,game:'deltaforce',date:'2026-02-03',type:'update',
+   title:'大型シーズンアップデート「モーフォシス」',
+   desc:'2026年最初の大型シーズン「モーフォシス」配信(2/3)。新サポートオペレーター「フリンダラ」(医療ドローン×バタフライレスキュードローン)、新Warfareマップ「アフターショック」(都市型フルスケール環境破壊・初実装)、新ゲームモード「フラッシュポイント」(移動型目標)実装。アップデート以降DAUは持続的下落傾向。',
+   tags:['モーフォシス','新シーズン','新マップ','新モード','新オペレーター'],source:'https://x.com/DeltaForceG_JP'},
+  {id:9,game:'deltaforce',date:'2026-02-27',endDate:'2026-03-13',type:'event',
+   title:'春節 錦鯉イベント ＆「春の軍馬」抽選イベント',
+   desc:'マップ水域に出現する特殊カラーの錦鯉を捕まえて報酬を獲得するシーズナルイベント。「春の軍馬」抽選イベントと同時実施し期間限定スキン・乗り物外観を提供。',
+   tags:['春節','シーズナル','限定イベント','春の軍馬'],source:'https://x.com/DeltaForceG_JP'},
+  {id:10,game:'deltaforce',date:'2026-04-21',type:'update',
+   title:'Season 9 "Echo" ローンチ',
+   desc:'新シーズン「Echo」開幕(4/21)。新偵察オペレーター「モース」(ソナー追跡/インテルコントロール)、新Warfareマップ「アク・カナル」、「ゼロダム」大幅リニューアル(新ルート・横断オプション)、新武器AR-57・M82追加。Tomb Raiderコラボ(ラーラ・クロフト)、Burst Festイベント同時展開。',
+   tags:['Echo','新シーズン','新マップ','Tomb Raider','新オペレーター'],source:'https://x.com/DeltaForceG_JP'},
+  {id:11,game:'knivesout',date:'2026-01-01',type:'collab',
+   title:'NARUTO -ナルト- 疾風伝 コラボ',
+   desc:'荒野行動 × NARUTO -ナルト- 疾風伝の大型コラボが2026年1月1日より開催。2025年11月15日～30日の事前イベント（コラボガチャ10連無料）を経てスタート。うずまきナルト・うちはサスケなど人気キャラクターの限定スキンが登場。友達招待で追加ガチャ10連も獲得可能。',
+   tags:['NARUTO','アニメコラボ','疾風伝','事前イベント','無料ガチャ'],source:'https://knivesoutlab.com'},
+  {id:12,game:'codm',date:'2026-01-15',type:'update',
+   title:'Season 1 "凍てつく深淵 (Frozen Abyss)" ローンチ',
+   desc:'2026年シーズン1「凍てつく深淵」が1月15日9時(JST)スタート。冬・氷河テーマのバトルパス、新オペレータースキン実装。',
+   tags:['新シーズン','凍てつく深淵','Frozen Abyss','バトルパス'],source:'https://www.callofduty.com/ja/blog/mobile'},
+  {id:13,game:'codm',date:'2026-02-20',type:'update',
+   title:'Season 2 "Lunar Charge" ローンチ',
+   desc:'2026年シーズン2「Lunar Charge」が約2月20日スタート（推定）。旧正月テーマのシーズン。新オペレータースキン・バトルパス実装。',
+   tags:['新シーズン','Lunar Charge','旧正月','バトルパス'],source:'https://www.callofduty.com/ja/blog/mobile'},
+  {id:14,game:'codm',date:'2026-04-23',type:'update',
+   title:'Season 4 "永遠の牢獄 (Eternal Prison)" ローンチ',
+   desc:'2026年シーズン4「永遠の牢獄」が4月23日9時(JST)スタート。バトルロワイヤル「リバースアイランド」マップ拡張、新武器DP27 LMG、新バトルロワイヤルクラス「トキシック・オーバーロード」実装。コング&ゴジラインスパイアのオペレーターコラボも展開。',
+   tags:['新シーズン','永遠の牢獄','Eternal Prison','新マップ','DP27','Godzilla'],source:'https://www.callofduty.com/ja/blog/mobile'},
+  {id:15,game:'knivesout',date:'2026-05-14',type:'collab',
+   title:'BLEACH コラボ',
+   desc:'荒野行動 × TVアニメ「BLEACH」コラボが5月14日モバイル版アップデートと同時スタート。黒崎一護・朽木ルキアなどのキャラクターをテーマにした限定スキン・コラボガチャ実装。「荒野で卍解！」コラボモードも登場。',
+   tags:['BLEACH','アニメコラボ','一護','ルキア','卍解'],source:'https://x.com/GAME_KNIVES_OUT'},
+  {id:16,game:'knivesout',date:'2026-04-25',type:'event',
+   title:'荒野GOGOFES 2026 開幕 ＆ 荒野VTuber祭（にじさんじコラボ同時）',
+   desc:'年1度の大型フェス「荒野GOGOFES 2026」が4/25(土)0時より開幕。同時ににじさんじコラボ第4弾「荒野VTuber祭」が開催。5人集結でカスタム金車GET、動画投稿キャンペーン「荒野の光」(総額230万円)、GOGOFESガチャ半額券、チャージセンター限定パックなど大量施策を同時展開。VTuber配信でにじさんじライバーと視聴者参加型コンテンツも実施。',
+   tags:['GOGOFES','にじさんじ','VTuber祭','フレンド招待','動画投稿キャンペーン'],source:'https://x.com/GAME_KNIVES_OUT'},
+  {id:17,game:'knivesout',date:'2026-04-30',type:'event',
+   title:'I AM BOSSモード 開幕',
+   desc:'4/30(木)10時より新限定ゲームモード「I AM BOSSモード」が登場。極道テーマで組長となり最強の極道組織を結成するモード。参加報酬としてガチャコイン:人気テーマセレクション最大10枚を獲得可能。',
+   tags:['I AM BOSS','新モード','極道','期間限定'],source:'https://x.com/GAME_KNIVES_OUT'},
+  {id:18,game:'knivesout',date:'2026-05-01',type:'event',
+   title:'GOGOFES 殿堂ガチャ「双生の闇光2.0:日輪の月影」開始 ＆ 無料金銃配布',
+   desc:'5/1(金)0時、GOGOFESメインガチャ「新殿堂ガチャ」解禁。「双生の闇光2.0:日輪の月影」(専属4倍スコープ搭載M4A1+2スキル搭載ゼロスラ)が登場。同時に毎日バトルプレイでニキシアの金枠衣装プレゼント、AK-47:コメントオフェンス(Lv7永久版)を無料配布。事前予告ツイートが389万viewsを記録し最大バズ。',
+   tags:['殿堂ガチャ','GOGOFES','双生の闇光','無料配布','課金施策'],source:'https://x.com/GAME_KNIVES_OUT'},
+  {id:19,game:'knivesout',date:'2026-05-03',endDate:'2026-05-06',type:'collab',
+   title:'荒野行動 × 東京リベンジャーズ 復刻コラボ',
+   desc:'5/3(日)〜5/6(水)、東京リベンジャーズとの復刻コラボ開催。GW施策として第1弾〜第4弾ガチャを期間限定で復刻。「コラボ第4弾ガチャ」「伝説のマイキーコラボ車両」など過去人気アイテムを再提供。',
+   tags:['東京リベンジャーズ','復刻コラボ','GW','マイキー'],source:'https://x.com/GAME_KNIVES_OUT'},
+  {id:20,game:'knivesout',date:'2026-05-05',type:'event',
+   title:'荒野行動の日（荒野県民の日）',
+   desc:'毎年5月5日は「荒野行動の日」。2026年はGOGOFESと連動し特別記念イベントを開催。ログインで殿堂ガチャ10連無料、アマギフ1万円が当たるGOGOFESイベント参加特典、記念CM公開など豪華施策展開。',
+   tags:['荒野行動の日','荒野県民の日','記念日','無料ガチャ','ログインボーナス'],source:'https://x.com/GAME_KNIVES_OUT'},
+  {id:21,game:'knivesout',date:'2026-05-08',type:'event',
+   title:'GOGOFES 銀翼星使シリーズ 解禁',
+   desc:'5/8(金)0時、GOGOFESメイン新ガチャ「銀翼星使シリーズ」解禁。仲間乗り物「銀翼の星竜」と星竜使いキャラクター「コゼット」が先行公開。SACR-H(銀翼の星竜SP枠・専属アニメ付き)、クーペも同時解禁。予告PVが136万views超を記録。',
+   tags:['銀翼星使','GOGOFES','殿堂ガチャ','仲間乗り物','コゼット'],source:'https://x.com/GAME_KNIVES_OUT'},
+  {id:22,game:'knivesout',date:'2026-05-14',type:'event',
+   title:'サイバープロトコルシリーズ ＆ SP枠LSR-8 解禁',
+   desc:'5/14(木)10時、BLEACHコラボと同日アップデートでサイバープロトコルシリーズが登場。初のSP枠LSR-8(専属アニメーション+「サイバーちゃん」スペシャル演出付き)、カプセルカー、M27、衣装「サイバー･メロディ」、ガス弾「サイレントエコー」が解禁。復刻イベント「ペニンシュラ大脱走S9:メイド救出作戦」も同時実施。',
+   tags:['サイバープロトコル','SP枠','LSR-8','アニメーション','新武器'],source:'https://x.com/GAME_KNIVES_OUT'},
+  {id:23,game:'knivesout',date:'2026-05-16',endDate:'2026-05-29',type:'event',
+   title:'GOGOFES 毎週金枠無料GET 第2弾「GOLDEN:バニーガール」＆ T1金車マイカー化プラン',
+   desc:'5/16(土)より荒野GOGOFES 毎週金枠無料GETイベント第2弾スタート。通常バトル5日間プレイで金枠「GOLDEN:バニーガール」＆ガチャコイン×5を無料取得可能(5/29まで)。同日よりT1金車マイカー化プランも開始(5/16〜6/5、初回20%OFF)。新衣装「チアガール」(3色カラバリ)が5/17より登場。',
+   tags:['金枠無料','GOLDEN','バニーガール','T1','マイカー化','チアガール','ワールドカップ'],source:'https://x.com/GAME_KNIVES_OUT'},{id:24,game:'codm',date:'2026-04-22',endDate:'2026-05-21',type:'collab',
+title:'Season 4 × Godzilla x Kong',
+desc:'CoD Mobile Season 4「Eternal Prison」開幕。ゴジラ×コングMonsterverseコラボ実施。新BR「Rebirth Island」追加、新BRクラス「Toxic Overload」実装。新武器DP27 LMG無料配布。'},
+{id:25,game:'deltaforce',date:'2026-05-01',type:'update',
+title:'5月アップデート — 新イベント追加',
+desc:'新イベント追加＆バグ修正アップデート実施。期間限定デルタチケット配布イベント（最大2,600枚、5/30まで）を新規実装。'},
+{id:26,game:'codm',date:'2026-05-27',type:'collab',
+title:'Season 5 × The Boys コラボ',
+desc:'CoD Mobile Season 5「Revenge」開幕。米ドラマ「ザ・ボーイズ」とのコラボ。ホームランダー・スターライト・ブラック・ノワールをモチーフとした3種ドロー実装。新武器BAL-27アサルトライフル、アーマード・ロワイヤルモード追加。'}
+];
+
+/* ─── FIREBASE INIT ─── */
+const firebaseConfig = {
+  apiKey: "AIzaSyAKJ88UekIRR8GXUonU9QP3MR-nwrU5BaE",
+  authDomain: "pubgm-competitor-dashboard.firebaseapp.com",
+  projectId: "pubgm-competitor-dashboard",
+  storageBucket: "pubgm-competitor-dashboard.firebasestorage.app",
+  messagingSenderId: "345033584326",
+  appId: "1:345033584326:web:1ae5c2f0588778019ef1c7"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+/* ─── STORAGE KEYS ─── */
+const DATA_KEY   = 'jpDash_data_v2';
+const EVENTS_KEY = 'jpDashEvents';
+
+/* ─── STATE ─── */
+const S = {
+  data:{ dataai:{traffic:null,revenue:null}, sensortower:{traffic:null,revenue:null} },
+  tlog:{ traffic:null, revenue:null },
+  source:'dataai', metric:'traffic',
+  chart:null,
+  subMetric:{ dataai:'traffic', sensortower:'traffic' },
+  filter:{ game:'all', type:'all', dateFrom:'', dateTo:'' },
+  events:[],
+  yMax:{},
+  pending:null,
+  range:{ start:'', end:'', preset:'1m' },
+  tableRange:{ start:'', end:'', preset:'1m' },
+  selectedAnnoIds: new Set()   // 그래프에 표시할 이벤트 ID 집합
+};
+
+/* ─── PERSIST / RESTORE (Firebase) ─── */
+async function persistData(){
+  try {
+    const dataStr = JSON.stringify(S.data);
+    if(dataStr.length > 900000){
+      // 청크로 분할 저장
+      const size = 800000;
+      const chunks = [];
+      for(let i=0;i<dataStr.length;i+=size) chunks.push(dataStr.slice(i,i+size));
+      await db.collection('dashboard').doc('data_meta').set({chunks:chunks.length, updatedAt:new Date()});
+      for(let i=0;i<chunks.length;i++){
+        await db.collection('dashboard').doc('data_chunk_'+i).set({data:chunks[i]});
+      }
+      await db.collection('dashboard').doc('data').delete().catch(()=>{});
+    } else {
+      await db.collection('dashboard').doc('data').set({data:dataStr, updatedAt:new Date()});
+      await db.collection('dashboard').doc('data_meta').delete().catch(()=>{});
+    }
+    toast('☁️ 클라우드에 저장됨','ok');
+  } catch(e){
+    console.error('Firebase 저장 실패', e);
+    try { localStorage.setItem(DATA_KEY, JSON.stringify(S.data)); }
+    catch(e2){ toast('⚠️ 저장 실패','err'); }
+  }
+}
+async function restoreData(){
+  try {
+    const doc = await db.collection('dashboard').doc('data').get();
+    if(doc.exists){ S.data = JSON.parse(doc.data().data); return; }
+    const metaDoc = await db.collection('dashboard').doc('data_meta').get();
+    if(metaDoc.exists){
+      const {chunks} = metaDoc.data();
+      let full = '';
+      for(let i=0;i<chunks;i++){
+        const cd = await db.collection('dashboard').doc('data_chunk_'+i).get();
+        full += cd.data().data;
+      }
+      S.data = JSON.parse(full);
+    }
+  } catch(e){
+    console.warn('Firebase 복원 실패, localStorage 시도', e);
+    try { const raw=localStorage.getItem(DATA_KEY); if(raw) S.data=JSON.parse(raw); }
+    catch(e2){ console.warn('데이터 복원 실패', e2); }
+  }
+}
+
+/* ─── T-LOG (Firebase) 자동 로드 ─── */
+async function loadTlog(){
+  try {
+    const doc = await db.collection('dashboard').doc('tlog').get();
+    if(!doc.exists) return;
+    const raw = doc.data().tlog;
+    if(!raw) return;
+    const parsed = JSON.parse(raw);
+    S.tlog.traffic = parsed.traffic || null;
+    S.tlog.revenue = parsed.revenue || null;
+  } catch(e){
+    console.warn('T-log 로드 실패', e);
+  }
+}
+
+/* 저장된 데이터 상태를 업로드 카드에 반영 */
+function refreshUploadUI(src){
+  if(src==='dataai') _refreshDataAIUI();
+  else _refreshSTUI();
+}
+
+function _refreshDataAIUI(){
+  const t=S.data.dataai.traffic, r=S.data.dataai.revenue;
+  const si=document.getElementById('si-dataai');
+  const siTx=document.getElementById('si-dataai-text');
+  const st=document.getElementById('st-dataai');
+  const dz=document.getElementById('dz-dataai');
+
+  // 게임별 칩 업데이트
+  Object.keys(GAMES).forEach(gk=>{
+    const chip=document.getElementById('chip-dataai-'+gk);
+    if(!chip) return;
+    const hasT=t?.rows?.some(row=>row[gk]!==null&&row[gk]>0);
+    const hasR=r?.rows?.some(row=>row[gk]!==null&&row[gk]>0);
+    const loaded=!!(hasT||hasR);
+    chip.className='game-chip'+(loaded?' loaded':'');
+    chip.textContent=(loaded?'✅ ':'⬜ ')+GAMES[gk].name;
+  });
+
+  if(!t&&!r){
+    si.className='stored-info';
+    st.textContent='파일을 업로드하면 기존 저장 데이터에 병합됩니다';
+    st.className='file-status';
+    dz.classList.remove('loaded');
+    return;
+  }
+
+  si.className='stored-info has-data';
+  const fmt=d=>{ if(!d) return null; return `${d.rows.length}행 (${d.rows[0]?.date} ~ ${d.rows[d.rows.length-1]?.date})`; };
+  const parts=[];
+  if(t) parts.push(`<strong>Traffic</strong> ${fmt(t)}`);
+  if(r) parts.push(`<strong>Revenue</strong> ${fmt(r)}`);
+  siTx.innerHTML='💾 저장됨 — '+parts.join(' &nbsp;|&nbsp; ');
+  st.textContent='새 파일을 올리면 날짜 기준으로 자동 병합됩니다';
+  st.className='file-status ok';
+  dz.classList.add('loaded');
+}
+
+function _refreshSTUI(){
+  const t=S.data.sensortower.traffic, r=S.data.sensortower.revenue;
+  const si=document.getElementById('si-sensortower');
+  const siTx=document.getElementById('si-sensortower-text');
+
+  // DAU 존 상태
+  const dauEl=document.getElementById('fs-st-dau');
+  const dauDz=document.getElementById('dz-st-dau');
+  if(t?.rows?.length){
+    dauEl.textContent=`✅ ${t.rows.length}일 (${t.rows[0].date} ~ ${t.rows[t.rows.length-1].date})`;
+    dauEl.className='file-status ok';
+    dauDz?.classList.add('loaded');
+  } else {
+    dauEl.textContent='미업로드';
+    dauEl.className='file-status';
+    dauDz?.classList.remove('loaded');
+  }
+
+  // Revenue 존 상태
+  const revEl=document.getElementById('fs-st-rev');
+  const revDz=document.getElementById('dz-st-rev');
+  if(r?.rows?.length){
+    revEl.textContent=`✅ ${r.rows.length}일 (${r.rows[0].date} ~ ${r.rows[r.rows.length-1].date})`;
+    revEl.className='file-status ok';
+    revDz?.classList.add('loaded');
+  } else {
+    revEl.textContent='미업로드';
+    revEl.className='file-status';
+    revDz?.classList.remove('loaded');
+  }
+
+  // stored-info 배지
+  if(!t&&!r){ si.className='stored-info'; return; }
+  si.className='stored-info has-data';
+  const fmt=d=>{ if(!d) return null; return `${d.rows.length}행 (${d.rows[0]?.date} ~ ${d.rows[d.rows.length-1]?.date})`; };
+  const parts=[];
+  if(t) parts.push(`<strong>DAU</strong> ${fmt(t)}`);
+  if(r) parts.push(`<strong>Revenue</strong> ${fmt(r)}`);
+  siTx.innerHTML='💾 저장됨 — '+parts.join(' &nbsp;|&nbsp; ');
+}
+
+/* 특정 소스/지표 데이터 삭제 */
+function clearData(src, metric){
+  const label = metric==='traffic'?'Traffic':'Revenue';
+  if(!confirm(`${src==='dataai'?'data.ai':'Sensor Tower'} ${label} 데이터를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
+  S.data[src][metric] = null;
+  persistData();
+  refreshUploadUI(src);
+  renderCharts(); renderTable(); renderHistSection();
+  toast(`${label} 데이터가 삭제되었습니다.`);
+}
+
+/* ─── INIT ─── */
+window.addEventListener('DOMContentLoaded', async ()=>{
+  // Chart.js 어노테이션 플러그인 등록
+  try{ Chart.register(ChartAnnotation); }catch(e){ console.warn('ChartAnnotation 플러그인 로드 실패:', e); }
+
+  // 로딩 표시
+  toast('☁️ 클라우드에서 데이터 불러오는 중...','ok');
+
+  // Firebase에서 이벤트 복원
+  try {
+    const evDoc = await db.collection('dashboard').doc('events').get();
+    if(evDoc.exists){
+      S.events = evDoc.data().events || [];
+      // 새 SEED_EVENTS ID가 Firebase에 없으면 자동으로 머지 (수동 편집 내용은 보존)
+      const existingIds = new Set(S.events.map(e=>e.id));
+      const newOnes = SEED_EVENTS.filter(e=>!existingIds.has(e.id));
+      if(newOnes.length){
+        S.events = [...S.events, ...newOnes.map(e=>({...e}))];
+        try { await db.collection('dashboard').doc('events').set({events:S.events, updatedAt:new Date()}); } catch(err){}
+      }
+    } else {
+      const savedEvs = localStorage.getItem(EVENTS_KEY);
+      S.events = savedEvs ? JSON.parse(savedEvs) : SEED_EVENTS.map(e=>({...e}));
+    }
+  } catch(e){
+    console.warn('이벤트 로드 실패', e);
+    const savedEvs = localStorage.getItem(EVENTS_KEY);
+    S.events = savedEvs ? JSON.parse(savedEvs) : SEED_EVENTS.map(e=>({...e}));
+  }
+  renderEvents();
+
+  // Firebase에서 스냅샷 복원
+  try {
+    S.snapshots = [];
+    const snapDoc = await db.collection('dashboard').doc('snapshots').get();
+    if(snapDoc.exists) S.snapshots = snapDoc.data().snapshots || [];
+  } catch(e){ console.warn('스냅샷 로드 실패', e); }
+  renderSnaps();
+  // 스냅샷 라벨 기본값 설정 (현재 년월)
+  const _nowSnap = new Date();
+  const _snapEl = document.getElementById('snapLabelInput');
+  if(_snapEl) _snapEl.value = `${_nowSnap.getFullYear()}年${String(_nowSnap.getMonth()+1).padStart(2,'0')}月`;
+  // Firebase에서 데이터 복원
+  await restoreData();
+  await loadTlog();
+  refreshUploadUI('dataai');
+  refreshUploadUI('sensortower');
+
+  // 기준일 설정 — 저장된 데이터 중 가장 최신 날짜 (T-log 포함)
+  const maxDate = [
+    ...['dataai','sensortower'].flatMap(src=>
+      ['traffic','revenue'].map(m=>S.data[src][m]?.rows?.at(-1)?.date)
+    ),
+    ...['traffic','revenue'].map(m=>S.tlog[m]?.rows?.at(-1)?.date)
+  ].filter(Boolean).sort().at(-1);
+  const _rdEl=document.getElementById('reportDate');
+  if(_rdEl) _rdEl.value = maxDate || new Date().toISOString().split('T')[0];
+
+  if(maxDate){ setPreset('1m'); setTablePreset('1m'); }
+  // URL 파라미터 스냅샷 자동 로드 — 데이터 로드 완료 후 적용해야 기간이 올바르게 복원됨
+  const _urlSnap = new URLSearchParams(window.location.search).get('snap');
+  if(_urlSnap){
+    const _autoSnap = S.snapshots.find(s => String(s.id) === _urlSnap);
+    if(_autoSnap) applySnap(_autoSnap.id);
+  }
+  toast('✅ 데이터 로드 완료','ok');
+});
+
+/* ─── TABS ─── */
+function showTab(name,btn){
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  btn.classList.add('active');
+}
+
+/* ─── UPLOAD ─── */
+function onDragOver(e){ e.preventDefault(); e.currentTarget.classList.add('dragging'); }
+function onDragLeave(e,id){ document.getElementById(id).classList.remove('dragging'); }
+
+// data.ai: 다중 파일 (게임별 파일 → 한꺼번에 드롭/선택)
+function onFileInputMulti(e,src){ Array.from(e.target.files).forEach(f=>processFile(f,src)); }
+function onDropMulti(e,src){
+  e.preventDefault();
+  document.getElementById('dz-'+src).classList.remove('dragging');
+  Array.from(e.dataTransfer.files).forEach(f=>processFile(f,src));
+}
+
+// Sensor Tower: DAU / Revenue 분리 존 (포맷 자동 감지)
+function onFileInputST(e,zone){ if(e.target.files[0]) processFile(e.target.files[0],'sensortower'); }
+function onDropST(e,zone){
+  e.preventDefault();
+  document.getElementById('dz-st-'+zone).classList.remove('dragging');
+  if(e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0],'sensortower');
+}
+
+/* 앱명/번들ID → gameKey 정규화
+   bundleId를 넘기면 번들ID 우선 매칭, 없으면 앱명으로 폴백 */
+function normalizeApp(name, bundleId){
+  // 1순위: Bundle ID / Package Name 정확 매칭
+  if(bundleId){
+    const bl=(bundleId||'').toLowerCase().trim();
+    for(const [gk,ids] of Object.entries(GAME_BUNDLE_IDS)){
+      if(ids.includes(bl)) return gk;
+    }
+  }
+  // 2순위: 앱명 패턴 매칭 (폴백)
+  const l=(name||'').toLowerCase().trim();
+  if(l.includes('knives out')||l.includes('荒野行動')||l.includes('荒野行动')) return 'knivesout';
+  if(l.includes('call of duty')) return 'codm';
+  if(l.includes('delta force')) return 'deltaforce';
+  if(l.includes('pubg mobile')||l.includes('pubg')) return 'pubgm';
+  return null;
+}
+
+/* 집계 맵 → rows 배열 변환 */
+function aggToRows(agg){
+  const allGames=Object.keys(GAMES);
+  const usedGames=new Set();
+  Object.values(agg).forEach(e=>Object.keys(e).forEach(k=>usedGames.add(k)));
+  const colMap={date:'Date'};
+  allGames.forEach(k=>{ colMap[k]=usedGames.has(k)?k:null; });
+  const rows=Object.entries(agg)
+    .map(([date,vals])=>{ const r={date}; allGames.forEach(k=>r[k]=vals[k]??null); return r; })
+    .sort((a,b)=>a.date.localeCompare(b.date));
+  return {rows,colMap};
+}
+
+/* ───────────────────────────────────────────
+   processFile: 포맷 자동 감지 → 파서 분기
+─────────────────────────────────────────── */
+function processFile(file,src){
+  // status 요소 null-safe (ST 카드는 별도 존 표시 사용)
+  const _stEl=document.getElementById('st-'+src);
+  if(_stEl){ _stEl.textContent='파싱 중...'; _stEl.className='file-status'; }
+
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const buf=ev.target.result;
+      const bytes=new Uint8Array(buf,0,4);
+      // UTF-16 BOM 감지 (Sensor Tower)
+      const isUTF16=(bytes[0]===0xFF&&bytes[1]===0xFE)||(bytes[0]===0xFE&&bytes[1]===0xFF);
+      if(isUTF16){ parseSensorTower(buf,src,file.name); return; }
+
+      // UTF-8 텍스트로 디코딩
+      const text=new TextDecoder('utf-8').decode(buf);
+      const firstLine=text.split('\n')[0].replace(/^﻿/,'').trim();
+
+      // data.ai Intelligence 헤더 감지
+      if(firstLine.startsWith('data-ai Intelligence')){ parseDataAI(text,src,file.name); return; }
+
+      // XLSX
+      const ext=file.name.split('.').pop().toLowerCase();
+      if(ext==='xlsx'||ext==='xls'){
+        const wb=XLSX.read(buf,{type:'array',cellDates:true});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const data=XLSX.utils.sheet_to_json(ws,{raw:false,dateNF:'YYYY-MM-DD'});
+        handleParsed(data,Object.keys(data[0]||{}),src,S.subMetric[src],file.name);
+        return;
+      }
+      // 일반 Wide CSV
+      const res=Papa.parse(text,{header:true,skipEmptyLines:true,dynamicTyping:true});
+      handleParsed(res.data,res.meta.fields,src,S.subMetric[src],file.name);
+    }catch(err){ toastErr('파싱 오류: '+err.message); console.error(err); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/* ───────────────────────────────────────────
+   Sensor Tower 파서
+   형식: UTF-16 LE BOM, 탭 구분, Long Format
+   - Revenue 파일: 'Revenue ($)' 컬럼 존재
+   - DAU 파일: 'DAU' 컬럼 존재
+   - Date × Unified Name × Platform × Device 합산
+─────────────────────────────────────────── */
+function parseSensorTower(buf,src,fname){
+  // UTF-16 LE BOM (FF FE): 물리적 BOM 2바이트 스킵 후 utf-16le 디코딩
+  const bytes=new Uint8Array(buf,0,4);
+  const isLE=bytes[0]===0xFF&&bytes[1]===0xFE;
+  const textBuf=buf.slice(2);
+  let text=new TextDecoder(isLE?'utf-16le':'utf-16be').decode(textBuf);
+  // 텍스트 레벨 BOM 문자(U+FEFF) 제거
+  if(text.charCodeAt(0)===0xFEFF) text=text.slice(1);
+  const lines=text.split(/\r?\n/).filter(l=>l.trim());
+  if(lines.length<2){ toastErr('Sensor Tower 파일이 비어있습니다.'); return; }
+
+  const headers=lines[0].split('\t').map(h=>h.trim());
+  const ci=(name)=>headers.findIndex(h=>h===name);
+  const iName=ci('Unified Name'), iDate=ci('Date');
+  const iDAU=ci('DAU'), iRev=ci('Revenue ($)');
+
+  if(iName<0||iDate<0){ toastErr('Sensor Tower 열 구조를 인식하지 못했습니다.'); return; }
+  const isDAU=iDAU>=0;
+  const metric=isDAU?'traffic':'revenue';
+  const iVal=isDAU?iDAU:iRev;
+
+  const agg={};
+  for(let i=1;i<lines.length;i++){
+    const cells=lines[i].split('\t');
+    const appName=(cells[iName]||'').trim();
+    const date=(cells[iDate]||'').trim();
+    const val=parseFloat((cells[iVal]||'0').trim())||0;
+    if(!date||!appName) continue;
+    const gk=normalizeApp(appName); if(!gk) continue;
+    if(!agg[date]) agg[date]={};
+    agg[date][gk]=(agg[date][gk]||0)+val;
+  }
+
+  const {rows,colMap}=aggToRows(agg);
+  const label=`ST_${metric==='traffic'?'DAU':'Revenue'}`;
+  mergeAndSave(src,metric,rows,colMap,label);
+  toast(`✅ Sensor Tower ${metric==='traffic'?'DAU':'Revenue'} 파싱 완료 (${rows.length}일)`,'ok');
+  afterLoad(src,rows);
+}
+
+/* ───────────────────────────────────────────
+   data.ai 파서
+   형식: UTF-8, 메타헤더 9줄 스킵, Long Format
+   - 컬럼: Unified App Name, Start Date,
+            Active Users, Store Revenue
+   - 파일 1개에서 Traffic + Revenue 동시 추출
+   - Market × Device 중복 행 합산
+─────────────────────────────────────────── */
+function parseDataAI(text,src,fname){
+  // 헤더 행 찾기 (App, 으로 시작하는 첫 번째 행)
+  const lines=text.split(/\r?\n/);
+  const hdrIdx=lines.findIndex(l=>l.startsWith('App,'));
+  if(hdrIdx<0){ toastErr('data.ai 파일 형식을 인식하지 못했습니다.'); return; }
+
+  const csvText=lines.slice(hdrIdx).join('\n');
+  const res=Papa.parse(csvText,{header:true,skipEmptyLines:true});
+  const rows=res.data;
+  if(!rows.length){ toastErr('data.ai 데이터가 비어있습니다.'); return; }
+
+  // 헤더 컬럼명 파악
+  const sampleRow=rows[0]||{};
+  const allCols=Object.keys(sampleRow);
+  // iOS: "App Bundle ID", Android: "App Package Name" — 각각 별도 컬럼
+  const bundleCol=allCols.find(k=>/^app\s+bundle\s+id$/i.test(k))||allCols.find(k=>/bundle.?id/i.test(k))||null;
+  const pkgCol  =allCols.find(k=>/^app\s+package\s+name$/i.test(k))||allCols.find(k=>/package.?name/i.test(k))||null;
+  // Country/Market 컬럼 감지
+  const countryCol=allCols.find(k=>/^country$/i.test(k)||/^market$/i.test(k)||/country.?name/i.test(k)||/market.?name/i.test(k))||null;
+
+  // 파싱 진단: 첫 번째 KO 매칭 행의 컬럼 구조를 콘솔에 출력
+  let _diagnosed=false;
+  const aggT={}, aggR={};
+  rows.forEach(row=>{
+    const appName=(row['Unified App Name']||'').trim();
+    // iOS: App Bundle ID 컬럼, Android: App Package Name 컬럼 — 둘 다 확인
+    const bundleId=((bundleCol?(row[bundleCol]||'').trim():'')||(pkgCol?(row[pkgCol]||'').trim():'')).toLowerCase();
+    const date=(row['Start Date']||'').trim();
+    const dau=parseFloat(row['Active Users']||0)||0;
+    const rev=parseFloat(row['Store Revenue']||0)||0;
+    if(!date) return;
+
+    // Bundle ID / Package Name 정확 매칭만 허용 — 이름 폴백 없음
+    // (중국판·글로벌판 등 다른 bundle ID 앱이 이름으로 혼입되는 것을 방지)
+    if(!bundleId) return; // bundle ID / package name 모두 없으면 스킵
+    const gk=Object.entries(GAME_BUNDLE_IDS).find(([,ids])=>ids.includes(bundleId))?.[0]||null;
+    if(!gk) return;
+
+    // Device 집계 행만 포함: ios-all / android-all 전체 집계만 사용
+    // (iphone, ipad, android-phone 등 세부 행은 ios-all/android-all에 이미 포함됨)
+    const deviceVal=(row['Device']||'').toLowerCase().trim();
+    if(deviceVal && !deviceVal.includes('-all') && !deviceVal.includes('all-')) return;
+
+    // 진단: 처음 매칭된 행의 컬럼 구조를 콘솔에 기록
+    if(!_diagnosed){
+      console.log('[data.ai 파서] bundleCol=', bundleCol, '/ pkgCol=', pkgCol);
+      console.log('[data.ai 파서] 첫 매칭:', gk, '| bundleId=', bundleId, '| date=', date, '| dau=', dau);
+      _diagnosed=true;
+    }
+
+    if(!aggT[date]) aggT[date]={};
+    if(!aggR[date]) aggR[date]={};
+    aggT[date][gk]=(aggT[date][gk]||0)+dau;
+    aggR[date][gk]=(aggR[date][gk]||0)+rev;
+  });
+
+  // 진단: 2026-04-01 KO 원시 행 전체 출력 (필터 적용 전)
+  const _koRaw=rows.filter(row=>{
+    const appName=(row['Unified App Name']||'').trim();
+    const bundleId=bundleCol?(row[bundleCol]||'').trim():'';
+    const date=(row['Start Date']||'').trim();
+    if(date!=='2026-04-01') return false;
+    // bundle ID 또는 이름으로 KO 후보 판단
+    const byBundle=bundleId&&bundleId.toLowerCase()==='com.netease.ko';
+    const byName=appName.toLowerCase().includes('knives out')||appName.includes('荒野行動');
+    return byBundle||byName;
+  });
+  console.log('[data.ai 진단] 2026-04-01 KO 원시 행 (필터 전, 전체):');
+  _koRaw.forEach((r,i)=>{
+    console.log(`  [${i+1}] bundleId="${r[bundleCol]||''}" | Device="${r['Device']||''}" | DeviceName="${r['Device Name']||''}" | Market="${r['Market']||''}" | Country="${r['Country']||r['Country Code']||''}" | DAU=${r['Active Users']}`);
+  });
+
+  const {rows:tRows,colMap:tMap}=aggToRows(aggT);
+  const {rows:rRows,colMap:rMap}=aggToRows(aggR);
+
+  // Traffic + Revenue 동시 저장
+  const usedGames=[...new Set([...Object.values(aggT).flatMap(Object.keys),...Object.values(aggR).flatMap(Object.keys)])];
+  const appLabel=usedGames.map(k=>GAMES[k]?.name).filter(Boolean).join(', ');
+
+  mergeAndSave(src,'traffic',tRows,tMap,`data.ai(${appLabel})`);
+  mergeAndSave(src,'revenue',rRows,rMap,`data.ai(${appLabel})`);
+
+  // 빈 DAU 행은 revenue 파일에만 있을 수 있음 → 안내
+  const emptyDAU=tRows.filter(r=>Object.keys(GAMES).every(k=>!r[k])).length;
+  const msg=emptyDAU>0?` (DAU 미집계 ${emptyDAU}일 포함)`:'';
+  toast(`✅ data.ai 파싱 완료: ${appLabel} (Traffic ${tRows.length}일, Revenue ${rRows.length}일)${msg}`,'ok');
+  afterLoad(src,tRows.length?tRows:rRows);
+}
+
+/* 공통: 병합 저장 */
+function mergeAndSave(src,metric,rows,colMap,fname){
+  const existing=S.data[src][metric];
+  let mergedRows,mergedColMap,added=0,updated=0;
+  if(existing?.rows?.length){
+    const map=new Map(existing.rows.map(r=>[r.date,{...r}]));
+    rows.forEach(r=>{
+      map.has(r.date)?updated++:added++;
+      const prev=map.get(r.date)||{};
+      const m={date:r.date};
+      // 새 값이 null이면 기존 값 유지 (게임별 파일 업로드 시 덮어쓰기 방지)
+      Object.keys(GAMES).forEach(gk=>{ m[gk]=r[gk]!==null?r[gk]:(prev[gk]??null); });
+      map.set(r.date,m);
+    });
+    mergedRows=Array.from(map.values()).sort((a,b)=>a.date.localeCompare(b.date));
+    mergedColMap={...existing.colMap};
+    Object.entries(colMap).forEach(([k,v])=>{ if(v) mergedColMap[k]=v; });
+  } else {
+    mergedRows=rows; mergedColMap=colMap; added=rows.length;
+  }
+  S.data[src][metric]={rows:mergedRows,colMap:mergedColMap,fname};
+}
+
+/* 공통: 저장 후 UI 갱신 */
+function afterLoad(src,rows){
+  persistData();
+  refreshUploadUI(src);
+  syncRangeInputs();
+  renderCharts(); renderTable(); renderHistSection();
+  document.getElementById('lastUpdated').textContent='마지막 업로드: '+new Date().toLocaleTimeString('ko-KR');
+  const rdInput=document.getElementById('reportDate');
+  const maxDate=(Array.isArray(rows)?rows:Object.values(rows)).at(-1)?.date;
+  if(maxDate&&rdInput) rdInput.value=maxDate;
+}
+
+/* 일반 Wide CSV 경로 */
+function handleParsed(raw,headers,src,metric,fname){
+  const colMap=detectCols(headers);
+  const gamesFound=Object.keys(GAMES).filter(k=>colMap[k]!==null);
+  if(!colMap.date||gamesFound.length===0){
+    S.pending={raw,headers,src,metric,fname};
+    openMapModal(headers);
+    return;
+  }
+  const rows=raw.map(row=>{
+    const dv=row[colMap.date]; if(!dv) return null;
+    let d=String(dv).trim();
+    if(d.includes('/')){ const p=d.split('/'); d=`${p[0]}-${(p[1]||'').padStart(2,'0')}-${(p[2]||'').padStart(2,'0')}`; }
+    const entry={date:d};
+    Object.keys(GAMES).forEach(gk=>{
+      const val=colMap[gk]?parseFloat(String(row[colMap[gk]]||'').replace(/[$,]/g,'')):null;
+      entry[gk]=(isNaN(val)||val===null)?null:val;
+    });
+    return entry;
+  }).filter(Boolean).sort((a,b)=>a.date.localeCompare(b.date));
+  mergeAndSave(src,metric,rows,colMap,fname);
+  afterLoad(src,rows);
+  const srcLabel=src==='dataai'?'data.ai':'Sensor Tower';
+  toast(`✅ ${srcLabel} ${metric} 로드 완료 (${rows.length}행)`,'ok');
+}
+
+function detectCols(headers){
+  const m={date:null,knivesout:null,codm:null,deltaforce:null,pubgm:null};
+  headers.forEach(h=>{
+    const l=(h||'').toLowerCase().trim();
+    if(!m.date&&DATE_PATTERNS.some(p=>l.includes(p))){ m.date=h; return; }
+    for(const [gk,pats] of Object.entries(GAME_PATTERNS)){
+      if(!m[gk]&&pats.some(p=>l.includes(p))) m[gk]=h;
+    }
+  });
+  if(!m.date&&headers.length>0) m.date=headers[0];
+  return m;
+}
+
+
+/* ─── COLUMN MAPPING MODAL ─── */
+function openMapModal(headers){
+  const c=document.getElementById('mapContent');
+  const opts=headers.map(h=>`<option value="${h}">${h}</option>`).join('');
+  c.innerHTML=`
+    <div class="map-row"><span class="map-label">📅 날짜 열</span><select class="map-select" id="md-date"><option value="">-- 선택 --</option>${opts}</select></div>
+    ${Object.entries(GAMES).map(([k,g])=>`
+    <div class="map-row"><span class="map-label" style="color:${g.color}">● ${g.name}</span><select class="map-select" id="md-${k}"><option value="">-- 없음 --</option>${opts}</select></div>`).join('')}`;
+  document.getElementById('mapModal').style.display='flex';
+}
+function closeMapModal(){ document.getElementById('mapModal').style.display='none'; S.pending=null; }
+function applyMapping(){
+  if(!S.pending) return;
+  const {raw,headers,src,metric,fname}=S.pending;
+  const colMap={date:document.getElementById('md-date').value||null};
+  Object.keys(GAMES).forEach(k=>{ const v=document.getElementById('md-'+k).value; colMap[k]=v||null; });
+  closeMapModal();
+  saveDataset(raw,colMap,src,metric,fname);
+}
+
+/* ─── RANGE PICKER ─── */
+
+// 4개 데이터 소스 전체에서 날짜 범위 추출
+function getDataDateRange(){
+  const all=[];
+  ['dataai','sensortower'].forEach(src=>['traffic','revenue'].forEach(m=>{
+    const d=S.data[src][m];
+    if(d?.rows?.length){ all.push(d.rows[0].date, d.rows[d.rows.length-1].date); }
+  }));
+  if(!all.length) return {min:null,max:null};
+  all.sort();
+  return {min:all[0],max:all[all.length-1]};
+}
+
+// 날짜 연산 헬퍼
+function addDays(dateStr, days){
+  const d = new Date(dateStr+'T00:00:00');
+  d.setDate(d.getDate()+days);
+  // toISOString()은 UTC 기준 → 로컬 날짜 함수로 포맷
+  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), dd=String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${dd}`;
+}
+
+// 프리셋 버튼 클릭
+function setPreset(p){
+  S.range.preset = p;
+  const { min, max } = getDataDateRange();
+
+  // 프리셋 버튼 활성화
+  ['all','1m','3m','6m','ytd','custom'].forEach(k=>{
+    const el = document.getElementById('preset-'+k);
+    if(el) el.classList.toggle('active', k===p);
+  });
+  document.getElementById('preset-custom').style.display = p==='custom'?'':'none';
+
+  if(p==='all' || !max){
+    S.range.start = min||''; S.range.end = max||'';
+  } else if(p==='1m'){ S.range.start=addDays(max,-30); S.range.end=max; }
+  else if(p==='3m'){ S.range.start=addDays(max,-90); S.range.end=max; }
+  else if(p==='6m'){ S.range.start=addDays(max,-180); S.range.end=max; }
+  else if(p==='ytd'){
+    const yr = max.substring(0,4);
+    S.range.start = yr+'-01-01'; S.range.end = max;
+  }
+
+  document.getElementById('rangeStart').value = S.range.start;
+  document.getElementById('rangeEnd').value   = S.range.end;
+  _commitRange();
+}
+
+// 날짜 입력창 직접 수정 시 → '직접 설정' 모드
+function onRangeInputChange(){
+  S.range.preset = 'custom';
+  ['all','1m','3m','6m','ytd'].forEach(k=> document.getElementById('preset-'+k)?.classList.remove('active'));
+  document.getElementById('preset-custom').style.display = '';
+  document.getElementById('preset-custom').classList.add('active');
+}
+
+// 적용 버튼
+function applyRange(){
+  S.range.start = document.getElementById('rangeStart').value;
+  S.range.end   = document.getElementById('rangeEnd').value;
+  _commitRange();
+}
+
+// 범위 적용 + 차트·테이블 갱신
+function _commitRange(){
+  const s=S.range.start, e=S.range.end;
+  const {min,max}=getDataDateRange();
+
+  const infoEl=document.getElementById('rangeInfo');
+  if(s&&e) infoEl.innerHTML=`<strong>${s}</strong> ~ <strong>${e}</strong>`;
+  else if(min&&max) infoEl.innerHTML=`<strong>${min}</strong> ~ <strong>${max}</strong>`;
+  else infoEl.textContent='';
+
+  const _rdEl2=document.getElementById('reportDate');
+  if(e&&_rdEl2) _rdEl2.value=e;
+
+  renderCharts();
+  renderTable();
+  renderHistSection();
+}
+
+// 데이터 로드 후 range 입력창 초기값 세팅
+function syncRangeInputs(){
+  const {min,max}=getDataDateRange();
+  if(!document.getElementById('rangeStart').value&&min) document.getElementById('rangeStart').value=min;
+  if(!document.getElementById('rangeEnd').value&&max)   document.getElementById('rangeEnd').value=max;
+  S.range.start=document.getElementById('rangeStart').value;
+  S.range.end=document.getElementById('rangeEnd').value;
+  const infoEl=document.getElementById('rangeInfo');
+  if(min&&max) infoEl.innerHTML=`<strong>${min}</strong> ~ <strong>${max}</strong>`;
+}
+
+/* ─── CHART INSTANCES ─── */
+const CHART_CFGS=[
+  {src:'dataai',     metric:'traffic', id:'dataai-traffic'},
+  {src:'sensortower',metric:'traffic', id:'sensortower-traffic'},
+  {src:'dataai',     metric:'revenue', id:'dataai-revenue'},
+  {src:'sensortower',metric:'revenue', id:'sensortower-revenue'}
+];
+const S_CHARTS={};
+
+/* ─── CHARTS ─── */
+function setYMax(id, val){
+  S.yMax[id] = val ? parseFloat(val) : null;
+  renderCharts();
+}
+
+function renderCharts(){
+  CHART_CFGS.forEach(cfg=>renderOneChart(cfg));
+  renderEvAnno();
+  CHART_CFGS.forEach(({id})=>{
+    const el=document.getElementById('ymax-'+id);
+    if(el&&S.yMax[id]) el.value=S.yMax[id];
+  });
+}
+
+function renderOneChart({src,metric,id}){
+  const d=S.data[src][metric];
+  const emptyEl=document.getElementById('empty-'+id);
+  const canvas=document.getElementById('canvas-'+id);
+  const legendEl=document.getElementById('legend-'+id);
+  if(!emptyEl||!canvas) return;
+
+  if(!d){
+    emptyEl.style.display='flex'; canvas.style.display='none';
+    if(S_CHARTS[id]){S_CHARTS[id].destroy();delete S_CHARTS[id];}
+    if(legendEl) legendEl.innerHTML=''; return;
+  }
+  emptyEl.style.display='none'; canvas.style.display='block';
+
+  const isRevenue=metric==='revenue';
+  const rs=S.range.start, re=S.range.end;
+  const vis=d.rows.filter(r=>(!rs||r.date>=rs)&&(!re||r.date<=re));
+  const rows=vis.length?vis:d.rows;
+  const labels=rows.map(r=>r.date);
+
+  // SensorTower 차트에서는 pubgm 제외 (T-log로 대체), 나머지는 그대로
+  const datasets=Object.entries(GAMES).filter(([k])=>{
+    if(!d.colMap[k]) return false;
+    if(k==='pubgm' && src==='sensortower') return false; // ST의 pubgm 제거
+    return true;
+  }).map(([k,g])=>({
+    label:g.name,
+    data:rows.map(r=>r[k]),
+    borderColor:g.color,
+    backgroundColor:isRevenue?g.color+'bb':g.color+'25',
+    borderWidth:isRevenue?0:2,
+    pointRadius:labels.length>90?0:2,
+    pointHoverRadius:5,
+    tension:.3,
+    fill:false,
+    type:isRevenue?'bar':'line'
+  }));
+
+  // T-log PUBGM 라인 추가 (모든 차트에 공통)
+  const tlD = S.tlog[metric];
+  if(tlD?.rows?.length){
+    const rs2=S.range.start, re2=S.range.end;
+    const tlVis=tlD.rows.filter(r=>(!rs2||r.date>=rs2)&&(!re2||r.date<=re2));
+    const tlRows=tlVis.length?tlVis:tlD.rows;
+    // 차트 labels와 날짜 맞추기: labels 배열 기준으로 매핑
+    const tlMap=Object.fromEntries(tlRows.map(r=>[r.date,r.pubgm]));
+    const tlData=labels.map(dt=>tlMap[dt]??null);
+    const pubgmColor=GAMES.pubgm.color;
+    if(isRevenue){
+      datasets.push({
+        label:'PUBGM (billing log)',
+        data:tlData,
+        borderColor:pubgmColor,
+        backgroundColor:pubgmColor+'bb',
+        borderWidth:0,
+        pointRadius:labels.length>90?0:2,
+        pointHoverRadius:5,
+        tension:.3,
+        fill:false,
+        type:'bar'
+      });
+    } else {
+      datasets.push({
+        label:'PUBGM (T-log)',
+        data:tlData,
+        borderColor:pubgmColor,
+        backgroundColor:pubgmColor+'60',
+        borderWidth:2.5,
+        borderDash:[],
+        pointRadius:labels.length>90?0:2,
+        pointHoverRadius:5,
+        tension:.3,
+        fill:false,
+        type:'line'
+      });
+    }
+  }
+
+  // 선택된 이벤트 점선 (레이블 없음 — 아래 Canvas 플러그인에서 직접 그림)
+  const annotations={};
+  const _annoEvs=[];
+  if(S.selectedAnnoIds.size>0&&labels.length>0){
+    S.events.filter(ev=>S.selectedAnnoIds.has(ev.id)&&ev.date>=labels[0]&&ev.date<=labels[labels.length-1])
+      .forEach((ev,i)=>{
+        const g=GAMES[ev.game]; if(!g) return;
+        annotations[id+'a'+i]={type:'line',xMin:ev.date,xMax:ev.date,
+          borderColor:g.color+'99',borderWidth:1.5,borderDash:[4,4]};
+        _annoEvs.push({ev,g});
+      });
+  }
+
+  // 차트 영역 맨 위 고정 레이블 (Canvas API) — 겹침 방지: 충돌 시 아래 행으로
+  const topLabelPlugin={
+    id:'tlp_'+id,
+    afterDraw(chart){
+      if(!_annoEvs.length) return;
+      const ctx=chart.ctx;
+      const {top,left,right}=chart.chartArea;
+      const xScale=chart.scales.x;
+      ctx.save();
+      ctx.font='bold 9px -apple-system,BlinkMacSystemFont,sans-serif';
+      ctx.textAlign='center';
+      ctx.textBaseline='top';
+      const pad=5, bh=14, gap=2, rowH=bh+gap;
+
+      // 1단계: 각 이벤트의 픽셀 위치·크기 계산
+      const items=[];
+      _annoEvs.forEach(({ev,g})=>{
+        const x=xScale.getPixelForValue(ev.date);
+        if(x===undefined||isNaN(x)||x<left-1||x>right+1) return;
+        const tw=ctx.measureText(ev.title).width;
+        const bw=tw+pad*2;
+        const bx=Math.max(left, Math.min(right-bw, x-bw/2));
+        items.push({ev,g,x,bx,bw});
+      });
+
+      // 2단계: 겹침 감지 → 행(row) 배정 (greedy interval scheduling)
+      // rows[r] = 해당 행에서 마지막으로 배치된 레이블의 오른쪽 끝 x
+      const rows=[];
+      items.forEach(item=>{
+        let placed=false;
+        for(let r=0;r<rows.length;r++){
+          if(item.bx > rows[r]+2){ // 2px 여유
+            item.row=r;
+            rows[r]=item.bx+item.bw;
+            placed=true;
+            break;
+          }
+        }
+        if(!placed){
+          item.row=rows.length;
+          rows.push(item.bx+item.bw);
+        }
+      });
+
+      // 3단계: 렌더
+      items.forEach(({ev,g,x,bx,bw,row})=>{
+        const by=top+3+row*rowH;
+        ctx.fillStyle=g.bg+'ee';
+        ctx.fillRect(bx,by,bw,bh);
+        ctx.strokeStyle=g.color+'bb';
+        ctx.lineWidth=0.8;
+        ctx.strokeRect(bx,by,bw,bh);
+        ctx.fillStyle=g.color;
+        ctx.fillText(ev.title, bx+bw/2, by+2);
+      });
+      ctx.restore();
+    }
+  };
+
+  if(S_CHARTS[id]) S_CHARTS[id].destroy();
+  S_CHARTS[id]=new Chart(canvas,{
+    type:isRevenue?'bar':'line',
+    data:{labels,datasets},
+    plugins:[topLabelPlugin],
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      scales:{
+        x:{ticks:{maxTicksLimit:12,font:{size:9},maxRotation:45},grid:{display:false}},
+        y:{max:(S.yMax&&S.yMax[id])?S.yMax[id]:undefined,ticks:{font:{size:10},callback:v=>{
+          if(isRevenue) return '$'+(v>=1e6?(v/1e6).toFixed(1)+'M':v>=1000?(v/1000).toFixed(0)+'K':v);
+          return v>=1e6?(v/1e6).toFixed(1)+'M':v>=1000?(v/1000).toFixed(0)+'K':v;
+        }},grid:{color:'#f3f4f6'}}
+      },
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{label:ctx=>{
+          const v=ctx.parsed.y;
+          if(v===null||v===undefined) return '';
+          return ` ${ctx.dataset.label}: ${isRevenue?'$'+Math.round(v).toLocaleString('en-US'):Math.round(v).toLocaleString('en-US')}`;
+        }}},
+        annotation:{annotations}
+      }
+    }
+  });
+
+  if(legendEl) legendEl.innerHTML=datasets.map(ds=>`<div class="legend-item"><div class="legend-dot" style="background:${ds.borderColor||ds.backgroundColor}"></div><span>${ds.label}</span></div>`).join('');
+}
+
+/* ─── EVENT ANNOTATION PANEL ─── */
+function renderEvAnno(){
+  const bar=document.getElementById('evAnnoBar');
+  const list=document.getElementById('evAnnoList');
+  const countEl=document.getElementById('evAnnoCount');
+  if(!bar) return;
+
+  const d=S.data[S.source][S.metric];
+  if(!d||!d.rows.length){ bar.style.display='none'; return; }
+  bar.style.display='';
+
+  const rs=S.range.start||d.rows[0].date;
+  const re=S.range.end||d.rows[d.rows.length-1].date;
+  const inRange=S.events.filter(ev=>ev.date>=rs&&ev.date<=re)
+    .sort((a,b)=>a.date.localeCompare(b.date));
+
+  countEl.textContent=inRange.length+'건';
+
+  if(!inRange.length){
+    list.innerHTML='<div class="ev-anno-empty">현재 기간에 등록된 이벤트가 없습니다</div>';
+    return;
+  }
+
+  const typeEmoji={collab:'🤝',update:'🔄',event:'🎯'};
+  list.innerHTML=inRange.map(ev=>{
+    const g=GAMES[ev.game]||{name:ev.game,color:'#888',bg:'#f3f4f6'};
+    const checked=S.selectedAnnoIds.has(ev.id);
+    const dateStr=ev.endDate&&ev.endDate!==ev.date?`${ev.date} ~ ${ev.endDate}`:ev.date;
+    return `<label class="ev-check-item${checked?' selected':''}" style="--ev-c:${g.color}">
+      <input type="checkbox" ${checked?'checked':''} onchange="toggleAnnoEvent(${ev.id},this)">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:4px;margin-bottom:3px;flex-wrap:wrap">
+          <span class="ev-check-game" style="background:${g.bg};color:${g.color}">${g.name}</span>
+          <span style="font-size:9px;color:#9ca3af">${typeEmoji[ev.type]||'🎮'}</span>
+        </div>
+        <div class="ev-check-title">${ev.title}</div>
+        <div class="ev-check-date">${dateStr}</div>
+      </div>
+      <button onclick="event.preventDefault();openEditEvModal(${ev.id})" title="수정"
+        style="flex-shrink:0;background:none;border:none;cursor:pointer;color:#d1d5db;font-size:14px;padding:2px 4px;line-height:1;border-radius:4px;transition:color .15s"
+        onmouseover="this.style.color='#3b82f6'" onmouseout="this.style.color='#d1d5db'">&#9999;&#65039;</button>
+      <button onclick="event.preventDefault();deleteAnnoEvent(${ev.id})" title="삭제"
+        style="flex-shrink:0;background:none;border:none;cursor:pointer;color:#d1d5db;font-size:14px;padding:2px 4px;line-height:1;border-radius:4px;transition:color .15s"
+        onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#d1d5db'">✕</button>
+    </label>`;
+  }).join('');
+}
+
+function toggleInlineAddForm(){
+  const form=document.getElementById('inlineAddForm');
+  const show=form.style.display==='none';
+  form.style.display=show?'block':'none';
+  if(show){
+    // 차트 범위 내 날짜로 기본값 세팅
+    const s=S.range.start||''; const e=S.range.end||'';
+    if(s) document.getElementById('iStart').value=s;
+    if(e) document.getElementById('iEnd').value=e;
+    document.getElementById('iTitle').focus();
+  }
+}
+
+function addInlineEvent(){
+  const game=document.getElementById('iGame').value;
+  const type=document.getElementById('iType').value;
+  const date=document.getElementById('iStart').value;
+  const endDate=document.getElementById('iEnd').value;
+  const title=document.getElementById('iTitle').value.trim();
+  if(!date||!title){ alert('시작일과 이벤트명은 필수입니다.'); return; }
+  const newEv={
+    id: Date.now(),
+    game, type, date,
+    endDate: endDate||date,
+    title,
+    desc:'',
+    tags:[]
+  };
+  S.events.push(newEv);
+  saveEvs();
+  // 추가된 이벤트 자동 선택
+  S.selectedAnnoIds.add(newEv.id);
+  // 폼 초기화
+  document.getElementById('iTitle').value='';
+  document.getElementById('iStart').value='';
+  document.getElementById('iEnd').value='';
+  toggleInlineAddForm();
+  renderEvAnno();
+  renderCharts();
+  toast(`✅ 이벤트 추가됨: ${title}`,'ok');
+}
+
+function toggleEvAnno(){
+  const body=document.getElementById('evAnnoBody');
+  const toggle=document.getElementById('evAnnoToggle');
+  const open=body.style.display!=='none';
+  body.style.display=open?'none':'block';
+  toggle.classList.toggle('open',!open);
+  document.getElementById('evAnnoArrow').style.transform=open?'':'rotate(180deg)';
+}
+
+function toggleAnnoEvent(id,cb){
+  if(cb.checked) S.selectedAnnoIds.add(id);
+  else S.selectedAnnoIds.delete(id);
+  cb.closest('.ev-check-item').classList.toggle('selected',cb.checked);
+  renderCharts();
+}
+
+function deleteAnnoEvent(id){
+  S.events=S.events.filter(ev=>ev.id!==id);
+  S.selectedAnnoIds.delete(id);
+  saveEvs();
+  renderEvAnno();
+  renderCharts();
+}
+
+function selectAllAnno(){
+  const d=S.data[S.source][S.metric];
+  if(!d||!d.rows.length) return;
+  const rs=S.range.start||d.rows[0].date;
+  const re=S.range.end||d.rows[d.rows.length-1].date;
+  S.events.filter(ev=>ev.date>=rs&&ev.date<=re).forEach(ev=>S.selectedAnnoIds.add(ev.id));
+  renderEvAnno(); renderCharts();
+}
+
+function clearAllAnno(){
+  S.selectedAnnoIds.clear();
+  renderEvAnno(); renderCharts();
+}
+
+/* ─── SUMMARY TABLE RANGE ─── */
+function setTablePreset(p){
+  S.tableRange.preset = p;
+  const {min,max}=getDataDateRange();
+  ['all','1m','3m','6m','ytd','custom'].forEach(k=>{
+    const el=document.getElementById('tbl-preset-'+k);
+    if(el) el.classList.toggle('active', k===p);
+  });
+  document.getElementById('tbl-preset-custom').style.display = p==='custom'?'':'none';
+  if(p==='all'||!max){ S.tableRange.start=min||''; S.tableRange.end=max||''; }
+  else if(p==='1m'){ S.tableRange.start=addDays(max,-30); S.tableRange.end=max; }
+  else if(p==='3m'){ S.tableRange.start=addDays(max,-90); S.tableRange.end=max; }
+  else if(p==='6m'){ S.tableRange.start=addDays(max,-180); S.tableRange.end=max; }
+  else if(p==='ytd'){ S.tableRange.start=max.substring(0,4)+'-01-01'; S.tableRange.end=max; }
+  document.getElementById('tableRangeStart').value=S.tableRange.start;
+  document.getElementById('tableRangeEnd').value=S.tableRange.end;
+  renderTable();
+}
+function applyTableRange(){
+  S.tableRange.start=document.getElementById('tableRangeStart').value;
+  S.tableRange.end=document.getElementById('tableRangeEnd').value;
+  renderTable();
+}
+function onTableRangeInputChange(){
+  S.tableRange.preset='custom';
+  ['all','1m','3m','6m','ytd'].forEach(k=>document.getElementById('tbl-preset-'+k)?.classList.remove('active'));
+  document.getElementById('tbl-preset-custom').style.display='';
+  document.getElementById('tbl-preset-custom').classList.add('active');
+}
+function syncTableRangeFromData(){ setTablePreset('all'); }
+
+function renderTable(){
+  const container=document.getElementById('summaryTables');
+  const hasAny=Object.values(S.data).some(src=>Object.values(src).some(d=>d));
+  if(!hasAny){container.innerHTML='<div class="no-data-msg">데이터를 업로드하면 기간별 비교 테이블이 표시됩니다</div>';return;}
+
+  const tblStart=S.tableRange.start||document.getElementById('tableRangeStart').value;
+  const tblEnd=S.tableRange.end||document.getElementById('tableRangeEnd').value;
+  if(!tblStart||!tblEnd){
+    container.innerHTML='<div class="no-data-msg">위에서 기간을 설정하면 기간별 비교 테이블이 표시됩니다</div>';
+    return;
+  }
+  const periods=calcPeriods(tblStart, tblEnd);
+  container.innerHTML=
+    buildUnifiedTable('traffic',periods)+
+    '<div style="height:18px"></div>'+
+    buildUnifiedTable('revenue',periods);
+}
+
+function buildUnifiedTable(metric,periods){
+  const daD=S.data.dataai[metric];
+  const stD=S.data.sensortower[metric];
+  // T-log(PUBGM): Firebase에서 로드한 S.tlog 사용
+  const tlD=S.tlog[metric]?.rows?.length?S.tlog[metric]:null;
+
+  const compGames=['knivesout','codm','deltaforce'];
+  const isRevenue=metric==='revenue';
+  const metricLabel=isRevenue?'Revenue':'Traffic';
+
+  const daiGames=compGames.filter(k=>daD?.colMap?.[k]);
+  const stGames=compGames.filter(k=>stD?.colMap?.[k]);
+  const hasTlog=!!(tlD?.colMap?.pubgm);
+
+  if(!daiGames.length&&!stGames.length&&!hasTlog)
+    return `<div class="no-data-msg">${metricLabel} 데이터 없음</div>`;
+
+  function getVal(data,gk,period){
+    if(!data||!data.colMap[gk]) return null;
+    return aggPeriod(data.rows,data.colMap,period.s,period.e,metric)[gk];
+  }
+  const fmt=v=>{
+    if(v===null||v===undefined||isNaN(v)) return '-';
+    return isRevenue?'$'+Math.round(v).toLocaleString('en-US'):Math.round(v).toLocaleString('en-US');
+  };
+  const pct=(a,b)=>{
+    if(a===null||b===null||b===0||isNaN(a)||isNaN(b)) return null;
+    return Math.round((a-b)/b*100);
+  };
+  const pctCell=n=>{
+    if(n===null) return '<td>-</td>';
+    const cls=n>0?'pos':n<0?'neg':'neu';
+    return `<td class="${cls}">${n>0?'▲':'▼'}${Math.abs(n)}%</td>`;
+  };
+  const gameLabel=k=>({knivesout:'Knives Out',codm:'CoDM',deltaforce:'Delta Force',pubgm:'PUBG Mobile'}[k]||k);
+
+  // 헤더 행 1
+  let h1=`<tr>
+    <th class="meta-h" rowspan="2">/</th>
+    <th class="date-h" rowspan="2">Start date</th>
+    <th class="date-h" rowspan="2">End date</th>`;
+  if(daiGames.length) h1+=`<th class="dai-h" colspan="${daiGames.length}">data.ai</th>`;
+  if(stGames.length)  h1+=`<th class="st-h"  colspan="${stGames.length}">Sensor Tower</th>`;
+  if(hasTlog)         h1+=`<th class="tlog-h" colspan="1">${isRevenue?'Billing Log':'T-log'}</th>`;
+  h1+='</tr>';
+
+  // 헤더 행 2
+  let h2='<tr>';
+  daiGames.forEach(k=>{ h2+=`<th class="sub-dai">${gameLabel(k)}</th>`; });
+  stGames.forEach(k=>{  h2+=`<th class="sub-st">${gameLabel(k)}</th>`; });
+  if(hasTlog)           h2+=`<th class="sub-tlog">PUBGM</th>`;
+  h2+='</tr>';
+
+  // 기간 데이터 행
+  const periodKeys=[
+    {k:'thisMonth',l:'This Month'},
+    {k:'lastMonth',l:'Last Month'},
+    {k:'lyMonth',l:'Last Year Same Month (MTD)'},
+    null,
+    {k:'thisQ',l:'This Quarter'},
+    {k:'lastQ',l:'Last Quarter'},
+    {k:'lyQ',l:'Last Year Same Quarter (QTD)'}
+  ];
+  let dataRows='';
+  periodKeys.forEach(p=>{
+    if(!p){dataRows+='<tr class="sep-row"><td colspan="100"></td></tr>';return;}
+    const per=periods[p.k];
+    const isHl=p.k==='thisMonth'||p.k==='thisQ';
+    let r=`<tr${isHl?' class="hl-row"':''}><td class="period-name">${p.l}</td><td class="date-val">${per.s}</td><td class="date-val">${per.e}</td>`;
+    daiGames.forEach(k=>{ r+=`<td>${fmt(getVal(daD,k,per))}</td>`; });
+    stGames.forEach(k=>{  r+=`<td>${fmt(getVal(stD,k,per))}</td>`; });
+    if(hasTlog) r+=`<td>${fmt(getVal(tlD,'pubgm',per))}</td>`;
+    r+='</tr>';
+    dataRows+=r;
+  });
+  let selectedRangeRow='';
+
+  // 성장률 행
+  const growthDefs=[
+    {l:'MoM (%)',           a:'thisMonth',b:'lastMonth'},
+    {l:'QoQ (%)',           a:'thisQ',    b:'lastQ'},
+    {l:'YoY (Monthly)',     a:'thisMonth',b:'lyMonth'},
+    {l:'YoY (Quarterly)',   a:'thisQ',    b:'lyQ'}
+  ];
+  let growthRows='<tr class="sep-row"><td colspan="100"></td></tr>';
+  growthDefs.forEach(({l,a,b})=>{
+    let r=`<tr class="growth-row"><td class="period-name">${l}</td><td colspan="2"></td>`;
+    daiGames.forEach(k=>r+=pctCell(pct(getVal(daD,k,periods[a]),getVal(daD,k,periods[b]))));
+    stGames.forEach(k=> r+=pctCell(pct(getVal(stD,k,periods[a]),getVal(stD,k,periods[b]))));
+    if(hasTlog) r+=pctCell(pct(getVal(tlD,'pubgm',periods[a]),getVal(tlD,'pubgm',periods[b])));
+    r+='</tr>';
+    growthRows+=r;
+  });
+
+  return `<div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">${metricLabel}</div>
+  <div class="tbl-wrapper">
+    <table class="ms-table">
+      <thead>${h1}${h2}</thead>
+      <tbody>${selectedRangeRow}${dataRows}${growthRows}</tbody>
+    </table>
+  </div>`;
+}
+
+/* ── 최근 2년 지표 원본 ── */
+function toggleHistAcc(key){
+  const body=document.getElementById('hist-body-'+key);
+  const arrow=document.getElementById('hist-arrow-'+key);
+  if(!body) return;
+  const isOpen=body.style.display!=='none';
+  body.style.display=isOpen?'none':'block';
+  arrow.textContent=isOpen?'▼':'▲';
+  if(!isOpen) renderHistTable(key);
+}
+function getHistCutoff(){
+  // 모든 소스(T-log 포함) 중 가장 최신 날짜 기준으로 2년 커트오프 통일
+  const allData=[
+    S.data.dataai.traffic,S.data.dataai.revenue,
+    S.data.sensortower.traffic,S.data.sensortower.revenue,
+    S.tlog.traffic,S.tlog.revenue
+  ];
+  let maxDate='';
+  allData.forEach(d=>{
+    if(!d?.rows?.length) return;
+    const m=[...d.rows].sort((a,b)=>b.date.localeCompare(a.date))[0].date;
+    if(m>maxDate) maxDate=m;
+  });
+  return maxDate ? addDays(maxDate,-730) : '';
+}
+function get2YrRows(data){
+  if(!data?.rows?.length) return [];
+  const cutoff=getHistCutoff();
+  const rows=[...data.rows].sort((a,b)=>a.date.localeCompare(b.date));
+  return cutoff ? rows.filter(r=>r.date>=cutoff) : rows;
+}
+function aggHistRows(rows,colMap,gran,isRevenue){
+  const getKey=date=>{
+    if(gran==='daily') return date;
+    if(gran==='monthly') return date.substring(0,7);
+    if(gran==='quarterly'){const m=parseInt(date.substring(5,7));return date.substring(0,4)+'-Q'+Math.ceil(m/3);}
+    return date.substring(0,4);
+  };
+  const games=Object.keys(colMap).filter(k=>k!=='date');
+  const groups={};
+  rows.forEach(row=>{
+    const key=getKey(row.date);
+    if(!groups[key]) groups[key]={sum:{},cnt:{}};
+    games.forEach(gk=>{
+      const v=row[gk];
+      if(v!==null&&v!==undefined&&!isNaN(v)){groups[key].sum[gk]=(groups[key].sum[gk]||0)+v;groups[key].cnt[gk]=(groups[key].cnt[gk]||0)+1;}
+    });
+  });
+  return Object.entries(groups).sort((a,b)=>a[0].localeCompare(b[0])).map(([key,g])=>{
+    const row={date:key};
+    games.forEach(gk=>{const s=g.sum[gk],c=g.cnt[gk];row[gk]=(s!==undefined)?(isRevenue?s:Math.round(s/c)):null;});
+    return row;
+  });
+}
+function renderHistTable(key){
+  const cont=document.getElementById('hist-tbl-'+key);
+  if(!cont) return;
+  const daT=S.data.dataai.traffic, daR=S.data.dataai.revenue;
+  const stT=S.data.sensortower.traffic, stR=S.data.sensortower.revenue;
+  const tlT=S.tlog.traffic, tlR=S.tlog.revenue;
+  const games=['knivesout','codm','deltaforce'];
+  const gL={knivesout:'Knives Out',codm:'CoDM',deltaforce:'Delta Force'};
+  const daTr2=get2YrRows(daT),daRv2=get2YrRows(daR),stTr2=get2YrRows(stT),stRv2=get2YrRows(stR);
+  const tlTr2=get2YrRows(tlT),tlRv2=get2YrRows(tlR);
+  const daTAgg=daTr2.length?aggHistRows(daTr2,daT.colMap,key,false):[];
+  const daRAgg=daRv2.length?aggHistRows(daRv2,daR.colMap,key,true):[];
+  const stTAgg=stTr2.length?aggHistRows(stTr2,stT.colMap,key,false):[];
+  const stRAgg=stRv2.length?aggHistRows(stRv2,stR.colMap,key,true):[];
+  const tlTAgg=tlTr2.length?aggHistRows(tlTr2,tlT.colMap,key,false):[];
+  const tlRAgg=tlRv2.length?aggHistRows(tlRv2,tlR.colMap,key,true):[];
+  const daTG=games.filter(g=>daT?.colMap?.[g]),daRG=games.filter(g=>daR?.colMap?.[g]);
+  const stTG=games.filter(g=>stT?.colMap?.[g]),stRG=games.filter(g=>stR?.colMap?.[g]);
+  const hasTlT=tlTAgg.length>0, hasTlR=tlRAgg.length>0;
+  if(!daTAgg.length&&!daRAgg.length&&!stTAgg.length&&!stRAgg.length&&!hasTlT&&!hasTlR){cont.innerHTML='<div class="no-data-msg">데이터 없음</div>';return;}
+  const allDates=new Set([...daTAgg,...daRAgg,...stTAgg,...stRAgg,...tlTAgg,...tlRAgg].map(r=>r.date));
+  const sorted=[...allDates].sort((a,b)=>a.localeCompare(b));
+  const daTM=Object.fromEntries(daTAgg.map(r=>[r.date,r]));
+  const daRM=Object.fromEntries(daRAgg.map(r=>[r.date,r]));
+  const stTM=Object.fromEntries(stTAgg.map(r=>[r.date,r]));
+  const stRM=Object.fromEntries(stRAgg.map(r=>[r.date,r]));
+  const tlTM=Object.fromEntries(tlTAgg.map(r=>[r.date,r]));
+  const tlRM=Object.fromEntries(tlRAgg.map(r=>[r.date,r]));
+  const colGrps=[];
+  if(daTG.length) colGrps.push({label:'data.ai Traffic',games:daTG,map:daTM,isRev:false,cls:'dai-h',sub:'sub-dai'});
+  if(daRG.length) colGrps.push({label:'data.ai Revenue',games:daRG,map:daRM,isRev:true,cls:'dai-h',sub:'sub-dai'});
+  if(stTG.length) colGrps.push({label:'ST Traffic',games:stTG,map:stTM,isRev:false,cls:'st-h',sub:'sub-st'});
+  if(stRG.length) colGrps.push({label:'ST Revenue',games:stRG,map:stRM,isRev:true,cls:'st-h',sub:'sub-st'});
+  if(hasTlT) colGrps.push({label:'T-log Traffic',games:['pubgm'],map:tlTM,isRev:false,cls:'tlog-h',sub:'sub-tlog',isTlog:true});
+  if(hasTlR) colGrps.push({label:'Billing Log Revenue',games:['pubgm'],map:tlRM,isRev:true,cls:'tlog-h',sub:'sub-tlog',isTlog:true});
+  const fv=(v,isR)=>v===null||v===undefined||isNaN(v)?'-':isR?'$'+Math.round(v).toLocaleString():Math.round(v).toLocaleString();
+  const gLabel=g=>g==='pubgm'?'PUBGM':(gL[g]||g);
+  let h1=`<tr><th class="date-h" rowspan="2">기간</th>`;
+  colGrps.forEach(({label,games:gs,cls})=>{h1+=`<th class="${cls}" colspan="${gs.length}">${label}</th>`;});
+  h1+='</tr><tr>';
+  colGrps.forEach(({games:gs,sub})=>{gs.forEach(g=>{h1+=`<th class="${sub}">${gLabel(g)}</th>`;});});
+  h1+='</tr>';
+  let tbody='';
+  sorted.forEach(date=>{
+    tbody+=`<tr><td class="date-val">${date}</td>`;
+    colGrps.forEach(({games:gs,map,isRev})=>{const row=map[date]||{};gs.forEach(g=>{tbody+=`<td>${fv(row[g],isRev)}</td>`;});});
+    tbody+='</tr>';
+  });
+  const noteMap={daily:'(Traffic = 일별 값 그대로)',monthly:'(Traffic = 월 평균, Revenue = 월 합계)',quarterly:'(Traffic = 분기 평균, Revenue = 분기 합계)',yearly:'(Traffic = 연 평균, Revenue = 연 합계)'};
+  cont.innerHTML=`<div style="font-size:11px;color:#9ca3af;margin-bottom:6px">${noteMap[key]}</div><div class="tbl-wrapper"><table class="ms-table"><thead>${h1}</thead><tbody>${tbody}</tbody></table></div>`;
+}
+function exportHistCSV(key){
+  const daT=S.data.dataai.traffic,daR=S.data.dataai.revenue,stT=S.data.sensortower.traffic,stR=S.data.sensortower.revenue;
+  const tlT=S.tlog.traffic,tlR=S.tlog.revenue;
+  const games=['knivesout','codm','deltaforce'];
+  const gL={knivesout:'Knives Out',codm:'CoDM',deltaforce:'Delta Force'};
+  const daTr2=get2YrRows(daT),daRv2=get2YrRows(daR),stTr2=get2YrRows(stT),stRv2=get2YrRows(stR);
+  const tlTr2=get2YrRows(tlT),tlRv2=get2YrRows(tlR);
+  const daTAgg=daTr2.length?aggHistRows(daTr2,daT.colMap,key,false):[];
+  const daRAgg=daRv2.length?aggHistRows(daRv2,daR.colMap,key,true):[];
+  const stTAgg=stTr2.length?aggHistRows(stTr2,stT.colMap,key,false):[];
+  const stRAgg=stRv2.length?aggHistRows(stRv2,stR.colMap,key,true):[];
+  const tlTAgg=tlTr2.length?aggHistRows(tlTr2,tlT.colMap,key,false):[];
+  const tlRAgg=tlRv2.length?aggHistRows(tlRv2,tlR.colMap,key,true):[];
+  const daTG=games.filter(g=>daT?.colMap?.[g]),daRG=games.filter(g=>daR?.colMap?.[g]);
+  const stTG=games.filter(g=>stT?.colMap?.[g]),stRG=games.filter(g=>stR?.colMap?.[g]);
+  const hasTlT=tlTAgg.length>0,hasTlR=tlRAgg.length>0;
+  const allDates=new Set([...daTAgg,...daRAgg,...stTAgg,...stRAgg,...tlTAgg,...tlRAgg].map(r=>r.date));
+  if(!allDates.size){toast('내보낼 데이터가 없습니다.','err');return;}
+  const sorted=[...allDates].sort((a,b)=>a.localeCompare(b));
+  const daTM=Object.fromEntries(daTAgg.map(r=>[r.date,r]));
+  const daRM=Object.fromEntries(daRAgg.map(r=>[r.date,r]));
+  const stTM=Object.fromEntries(stTAgg.map(r=>[r.date,r]));
+  const stRM=Object.fromEntries(stRAgg.map(r=>[r.date,r]));
+  const tlTM=Object.fromEntries(tlTAgg.map(r=>[r.date,r]));
+  const tlRM=Object.fromEntries(tlRAgg.map(r=>[r.date,r]));
+  const hdrs=[
+    '기간',
+    ...daTG.map(g=>`${gL[g]} Traffic (data.ai)`),
+    ...daRG.map(g=>`${gL[g]} Revenue (data.ai)`),
+    ...stTG.map(g=>`${gL[g]} Traffic (SensorTower)`),
+    ...stRG.map(g=>`${gL[g]} Revenue (SensorTower)`),
+    ...(hasTlT?['PUBGM Traffic (T-log)']:[]),
+    ...(hasTlR?['PUBGM Revenue (billing log)']:[])
+  ];
+  const csvRows=[hdrs.join(',')];
+  sorted.forEach(date=>{
+    const vals=[
+      date,
+      ...daTG.map(g=>daTM[date]?.[g]??''),
+      ...daRG.map(g=>daRM[date]?.[g]??''),
+      ...stTG.map(g=>stTM[date]?.[g]??''),
+      ...stRG.map(g=>stRM[date]?.[g]??''),
+      ...(hasTlT?[tlTM[date]?.pubgm??'']:[]),
+      ...(hasTlR?[tlRM[date]?.pubgm??'']:[])
+    ];
+    csvRows.push(vals.join(','));
+  });
+  const gran={daily:'데일리',monthly:'먼슬리',quarterly:'쿼터리',yearly:'이얼리'}[key];
+  const blob=new Blob(['﻿'+csvRows.join('\n')],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`${gran}_지표_최근2년.csv`;a.click();
+}
+function renderHistSection(){
+  const sect=document.getElementById('historicalSection');
+  if(!sect) return;
+  const hasAny=Object.values(S.data).some(src=>Object.values(src).some(d=>d))
+    || Object.values(S.tlog).some(d=>d?.rows?.length);
+  sect.style.display=hasAny?'':'none';
+  ['daily','monthly','quarterly','yearly'].forEach(key=>{
+    const body=document.getElementById('hist-body-'+key);
+    if(body&&body.style.display!=='none') renderHistTable(key);
+  });
+}
+function calcPeriods(tblStart, tblEnd){
+  const f=d=>{
+    const y=d.getFullYear();
+    const m=String(d.getMonth()+1).padStart(2,'0');
+    const dd=String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${dd}`;
+  };
+  const clamp=(y,m,d)=>{
+    const last=new Date(y,m+1,0).getDate();
+    return new Date(y,m,Math.min(d,last));
+  };
+  const addDaysTo=(d,n)=>{ const r=new Date(d); r.setDate(r.getDate()+n); return r; };
+  const rs=new Date(tblStart+'T00:00:00');
+  const re=new Date(tblEnd  +'T00:00:00');
+  const sy=rs.getFullYear(), sm=rs.getMonth(), sd=rs.getDate();
+  const ey=re.getFullYear(), em=re.getMonth(), ed=re.getDate();
+  const lastMonthS=clamp(sm===0?sy-1:sy, sm===0?11:sm-1, sd);
+  const lastMonthE=clamp(em===0?ey-1:ey, em===0?11:em-1, ed);
+  const eqm=Math.floor(em/3)*3;
+  const thisQStart=new Date(ey, eqm, 1);
+  const daysIntoQ=Math.round((re-thisQStart)/(1000*60*60*24));
+  const lqm=eqm-3<0?9:eqm-3;
+  const lqy=eqm-3<0?ey-1:ey;
+  const lastQStart=new Date(lqy, lqm, 1);
+  const lastQEnd=addDaysTo(lastQStart, daysIntoQ);
+  const lyQStart=new Date(ey-1, eqm, 1);
+  const lyQEnd=addDaysTo(lyQStart, daysIntoQ);
+  return {
+    thisMonth:{ s:tblStart, e:tblEnd },
+    lastMonth:{ s:f(lastMonthS), e:f(lastMonthE) },
+    lyMonth:{ s:f(clamp(sy-1, sm, sd)), e:f(clamp(ey-1, em, ed)) },
+    thisQ:{ s:f(thisQStart), e:tblEnd },
+    lastQ:{ s:f(lastQStart), e:f(lastQEnd) },
+    lyQ:{ s:f(lyQStart), e:f(lyQEnd) }
+  };
+}
+
+function aggPeriod(rows,colMap,s,e,metric){
+  const filtered=rows.filter(r=>r.date>=s&&r.date<=e);
+  if(!filtered.length) return {};
+  const res={};
+  Object.keys(GAMES).forEach(gk=>{
+    if(!colMap[gk]){res[gk]=null;return;}
+    const vals=filtered.map(r=>r[gk]).filter(v=>v!==null&&!isNaN(v));
+    if(!vals.length){res[gk]=null;return;}
+    res[gk]=metric==='traffic'?vals.reduce((a,b)=>a+b,0)/vals.length:vals.reduce((a,b)=>a+b,0);
+  });
+  return res;
+}
+
+/* ─── EVENTS ─── */
+function setEvDateFilter(){
+  S.filter.dateFrom=document.getElementById('evDateFrom').value;
+  S.filter.dateTo=document.getElementById('evDateTo').value;
+  renderEvents();
+}
+function setEvThisMonth(){
+  const now=new Date();
+  const y=now.getFullYear(),m=String(now.getMonth()+1).padStart(2,'0');
+  const last=new Date(y,now.getMonth()+1,0).getDate();
+  S.filter.dateFrom=`${y}-${m}-01`;
+  S.filter.dateTo=`${y}-${m}-${String(last).padStart(2,'0')}`;
+  document.getElementById('evDateFrom').value=S.filter.dateFrom;
+  document.getElementById('evDateTo').value=S.filter.dateTo;
+  renderEvents();
+}
+function clearEvDate(){
+  S.filter.dateFrom='';S.filter.dateTo='';
+  document.getElementById('evDateFrom').value='';
+  document.getElementById('evDateTo').value='';
+  renderEvents();
+}
+function setFilter(type,val,btn){
+  S.filter[type]=val;
+  const barId=type==='game'?'gFilter':'tFilter';
+  document.querySelectorAll(`#${barId} .fchip`).forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderEvents();
+}
+
+function renderEvents(){
+  const grid=document.getElementById('evGrid');
+  let list=S.events.filter(ev=>{
+    if(S.filter.game!=='all'&&ev.game!==S.filter.game) return false;
+    if(S.filter.type!=='all'&&ev.type!==S.filter.type) return false;
+    if(S.filter.dateFrom&&ev.date<S.filter.dateFrom) return false;
+    if(S.filter.dateTo&&ev.date>S.filter.dateTo) return false;
+    return true;
+  });
+  document.getElementById('evCount').textContent=`${list.length}개 이벤트`;
+  if(!list.length){
+    grid.innerHTML='<div class="empty-state"><div class="empty-icon">🔍</div><div>필터 조건에 맞는 이벤트가 없습니다</div></div>';
+    return;
+  }
+  const tLabel={collab:'콜라보',update:'업데이트',event:'이벤트'};
+  const tEmoji={collab:'🤝',update:'🔄',event:'🎯'};
+  const renderCard=ev=>{
+    const g=GAMES[ev.game]||{name:ev.game,color:'#888',bg:'#f3f4f6'};
+    const dateStr=ev.endDate&&ev.endDate!==ev.date?`${ev.date} ~ ${ev.endDate}`:ev.date;
+    const imgEl=ev.img?`<div style="padding:0 15px 10px"><img src="${ev.img}" style="width:100%;border-radius:6px;aspect-ratio:16/9;object-fit:cover;display:block" onerror="this.parentElement.remove()" alt=""></div>`
+      :`<div class="ev-placeholder" style="--gbg:${g.bg}">${tEmoji[ev.type]||'🎮'}</div>`;
+    return `<div class="ev-card">
+      <div class="ev-top" style="--gc:${g.color}">
+        <div class="ev-meta">
+          <span class="game-pill" style="background:${g.bg};color:${g.color}">${g.name}</span>
+          <span class="type-badge ${ev.type}">${tEmoji[ev.type]} ${tLabel[ev.type]}</span>
+          <span class="ev-date">${dateStr}</span>
+        </div>
+        <div class="ev-title">${ev.title}</div>
+        <div class="ev-desc">${ev.desc||''}</div>
+      </div>
+      ${imgEl}
+      <div class="ev-tags">${(ev.tags||[]).map(t=>`<span class="ev-tag">#${t}</span>`).join('')}</div>
+      <div class="ev-footer">
+        <button class="btn-icon" onclick="openEditEvModal(${ev.id})" title="수정">✏️</button>
+        <button class="btn-icon" onclick="delEvent(${ev.id})" title="삭제">🗑️</button>
+        ${ev.source?`<a class="btn-icon" href="${ev.source}" target="_blank" rel="noopener" title="참조 링크">🔗</a>`:''}
+      </div>
+    </div>`;
+  };
+  if(S.filter.game==='all'){
+    const gameOrder=['knivesout','codm','deltaforce'];
+    let html='';
+    gameOrder.forEach(gk=>{
+      const g=GAMES[gk];
+      const items=list.filter(ev=>ev.game===gk).sort((a,b)=>b.date.localeCompare(a.date));
+      if(!items.length) return;
+      html+=`<div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;margin:8px 0 4px">
+        <div style="width:4px;height:20px;background:${g.color};border-radius:2px"></div>
+        <span style="font-size:13px;font-weight:700;color:${g.color}">${g.name}</span>
+        <span style="font-size:11px;color:#9ca3af">${items.length}건</span>
+        <div style="flex:1;height:1px;background:#e5e7eb"></div>
+      </div>`;
+      html+=items.map(renderCard).join('');
+    });
+    grid.innerHTML=html;
+  } else {
+    grid.innerHTML=list.sort((a,b)=>b.date.localeCompare(a.date)).map(renderCard).join('');
+  }
+}
+
+let _editEvId=null;
+
+function openEditEvModal(id){
+  const ev=S.events.find(e=>e.id===id);
+  if(!ev) return;
+  _editEvId=id;
+  document.getElementById('eGame').value=ev.game||'knivesout';
+  document.getElementById('eType').value=ev.type||'event';
+  document.getElementById('eStart').value=ev.date||'';
+  document.getElementById('eEnd').value=ev.endDate||'';
+  document.getElementById('eTitle').value=ev.title||'';
+  document.getElementById('eDesc').value=ev.desc||'';
+  document.getElementById('eImgUrl').value=(ev.img&&!ev.img.startsWith('data:'))?ev.img:'';
+  document.getElementById('eImgFile').value='';
+  document.getElementById('eTags').value=(ev.tags||[]).join(', ');
+  document.getElementById('eSource').value=ev.source||'';
+  const prev=document.getElementById('eImgPreview');
+  prev.innerHTML=ev.img?`<img src="${ev.img}" style="max-height:100px;border-radius:6px;max-width:100%">`:'';
+  document.getElementById('editEvModal').style.display='flex';
+}
+
+function closeEditEvModal(){
+  document.getElementById('editEvModal').style.display='none';
+  _editEvId=null;
+}
+
+function previewEditImg(input){
+  const file=input.files[0];
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    document.getElementById('eImgPreview').innerHTML=`<img src="${e.target.result}" style="max-height:100px;border-radius:6px;max-width:100%">`;
+    document.getElementById('eImgUrl').value='';
+  };
+  reader.readAsDataURL(file);
+}
+
+function saveEditEv(){
+  const ev=S.events.find(e=>e.id===_editEvId);
+  if(!ev) return;
+  ev.game=document.getElementById('eGame').value;
+  ev.type=document.getElementById('eType').value;
+  ev.date=document.getElementById('eStart').value;
+  ev.endDate=document.getElementById('eEnd').value||null;
+  ev.title=document.getElementById('eTitle').value.trim();
+  ev.desc=document.getElementById('eDesc').value.trim();
+  ev.tags=document.getElementById('eTags').value.split(',').map(t=>t.trim()).filter(Boolean);
+  ev.source=document.getElementById('eSource').value.trim()||null;
+  const fileInput=document.getElementById('eImgFile');
+  const urlInput=document.getElementById('eImgUrl').value.trim();
+  if(fileInput.files[0]){
+    const reader=new FileReader();
+    reader.onload=e=>{ ev.img=e.target.result; saveEvs(); renderEvents(); renderEvAnno(); closeEditEvModal(); toast('저장되었습니다.','ok'); };
+    reader.readAsDataURL(fileInput.files[0]);
+    return;
+  }
+  ev.img=urlInput||ev.img||null;
+  saveEvs(); renderEvents(); renderEvAnno(); closeEditEvModal();
+  toast('저장되었습니다.','ok');
+}
+
+function toggleAddForm(){
+  const f=document.getElementById('addForm');
+  f.style.display=f.style.display==='none'?'block':'none';
+}
+
+function addEvent(){
+  const title=document.getElementById('nTitle').value.trim();
+  const date=document.getElementById('nStart').value;
+  if(!title||!date){ toastErr('날짜와 이벤트명은 필수입니다.'); return; }
+  const ev={
+    id:Date.now(),
+    game:document.getElementById('nGame').value,
+    type:document.getElementById('nType').value,
+    date,endDate:document.getElementById('nEnd').value||null,
+    title,desc:document.getElementById('nDesc').value.trim(),
+    img:document.getElementById('nImg').value.trim()||null,
+    tags:document.getElementById('nTags').value.split(',').map(t=>t.trim()).filter(Boolean),
+    source:document.getElementById('nSource').value.trim()||null
+  };
+  S.events.unshift(ev);
+  saveEvs();
+  renderEvents();
+  toggleAddForm();
+  ['nTitle','nStart','nEnd','nDesc','nImg','nTags','nSource'].forEach(id=>document.getElementById(id).value='');
+  toast('이벤트가 추가되었습니다.','ok');
+}
+
+function delEvent(id){
+  if(!confirm('이 이벤트를 삭제하시겠습니까?')) return;
+  S.events=S.events.filter(e=>e.id!==id);
+  saveEvs(); renderEvents();
+  toast('삭제되었습니다.');
+}
+
+async function saveEvs(){
+  try {
+    await db.collection('dashboard').doc('events').set({events:S.events, updatedAt:new Date()});
+  } catch(e){
+    console.warn('이벤트 Firebase 저장 실패', e);
+    localStorage.setItem(EVENTS_KEY,JSON.stringify(S.events));
+  }
+}
+
+function resetEvents(){
+  if(!confirm('이벤트를 초기 데이터로 초기화하시겠습니까?')) return;
+  S.events=SEED_EVENTS.map(e=>({...e}));
+  saveEvs(); renderEvents();
+  toast('이벤트가 초기화되었습니다.','ok');
+}
+
+
+/* ════ SNAPSHOT SIDEBAR ════ */
+S.snapshots = [];
+let _activeSnapId = null;
+
+function toggleSnapSidebar(){
+  const sb = document.getElementById('snapSidebar');
+  const ov = document.getElementById('snapOverlay');
+  if(!sb || !ov) return;
+  const opening = !sb.classList.contains('open');
+  sb.classList.toggle('open');
+  ov.classList.toggle('show');
+  if(opening){
+    // 라벨 입력란에 현재 년월 기본값 세팅
+    const el = document.getElementById('snapLabelInput');
+    if(el && !el.value){
+      const n=new Date();
+      el.value=`${n.getFullYear()}Year${String(n.getMonth()+1).padStart(2,'0')}Month`;
+    }
+  }
+}
+
+async function saveSnap(){
+  const labelEl = document.getElementById('snapLabelInput');
+  const label = (labelEl ? labelEl.value.trim() : '') || (() => {
+    const n=new Date(); return `${n.getFullYear()}Year${String(n.getMonth()+1).padStart(2,'0')}Month`;
+  })();
+  const snap = {
+    id: Date.now(),
+    label,
+    createdAt: new Date().toISOString(),
+    state: {
+      range:       { ...S.range },
+      tableRange:  { ...S.tableRange },
+      selectedAnnoIds: [...S.selectedAnnoIds],
+      filter:      { ...S.filter },
+      yMax:        { ...S.yMax }
+    }
+  };
+  S.snapshots.unshift(snap);
+  await saveSnaps();
+  renderSnaps();
+  _activeSnapId = snap.id;
+  renderSnaps();
+  toast('스냅샷이 저장되었습니다.', 'ok');
+}
+
+async function saveSnaps(){
+  try {
+    await db.collection('dashboard').doc('snapshots').set({ snapshots: S.snapshots, updatedAt: new Date() });
+  } catch(e){ console.warn('스냅샷 Firebase 저장 실패', e); }
+}
+
+function applySnap(id){
+  const snap = S.snapshots.find(s => s.id === id);
+  if(!snap) return;
+  const st = snap.state;
+  // 범위 복원
+  S.range      = { ...st.range };
+  S.tableRange = { ...st.tableRange };
+  // 어노테이션 복원
+  S.selectedAnnoIds = new Set(st.selectedAnnoIds || []);
+  // 필터 복원
+  if(st.filter) S.filter = { ...st.filter };
+  // Y축 최고값 복원
+  if(st.yMax){ S.yMax = { ...st.yMax }; Object.entries(S.yMax).forEach(([k,v])=>{ const el=document.getElementById('ymax-'+k); if(el) el.value=v||''; }); }
+  // 프리셋 버튼 UI 업데이트
+  setPreset(S.range.preset || 'custom');
+  setTablePreset(S.tableRange.preset || 'custom');
+  // 날짜 직접 입력창 업데이트 (custom인 경우)
+  ['rangeStart','rangeEnd'].forEach(eid => {
+    const el = document.getElementById(eid);
+    if(el) el.value = eid === 'rangeStart' ? (S.range.start||'') : (S.range.end||'');
+  });
+  // 재렌더
+  renderCharts(); renderTable(); renderEvAnno(); renderEvents();
+  _activeSnapId = id;
+  renderSnaps();
+  toast(`"${snap.label}" 불러왔습니다.`, 'ok');
+}
+
+function copySnapLink(id, ev){
+  if(ev) ev.stopPropagation();
+  const base = window.location.origin + window.location.pathname;
+  const url = `${base}?snap=${id}`;
+  navigator.clipboard.writeText(url).then(()=>toast('링크가 복사됐습니다. Confluence에 붙여넣으세요.','ok'))
+    .catch(()=>{ prompt('아래 URL을 복사하세요:', url); });
+}
+
+async function deleteSnap(id, ev){
+  if(ev) ev.stopPropagation();
+  if(!confirm('스냅샷을 삭제하시겠습니까?')) return;
+  S.snapshots = S.snapshots.filter(s => s.id !== id);
+  if(_activeSnapId === id) _activeSnapId = null;
+  await saveSnaps();
+  renderSnaps();
+  toast('삭제되었습니다.');
+}
+
+function renderSnaps(){
+  const list = document.getElementById('snapList');
+  if(!list) return;
+  if(!S.snapshots.length){
+    list.innerHTML='<div class="snap-empty">아직 저장된 스냅샷이 없습니다.<br>현재 대시보드 상태를 저장하면<br>언제든 다시 불러올 수 있어요.</div>';
+    return;
+  }
+  list.innerHTML = S.snapshots.map(s => {
+    const d = new Date(s.createdAt);
+    const dateStr = d.toLocaleDateString('ja-JP',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const r = s.state.range || {};
+    const rangeStr = (r.start||r.end) ? `${r.start||'…'} ~ ${r.end||'…'}` : (r.preset ? r.preset : '全期間');
+    const annoCount = (s.state.selectedAnnoIds||[]).length;
+    const isActive = s.id === _activeSnapId;
+    return `<div class="snap-item${isActive?' active-snap':''}" onclick="applySnap(${s.id})">
+      <div class="snap-item-label">${s.label}</div>
+      <div class="snap-item-date">${dateStr}</div>
+      <div class="snap-item-meta">📅 ${rangeStr}<br>🔖 이벤트 마킹 ${annoCount}건</div>
+      <div class="snap-item-foot">
+        <button class="snap-del-btn" onclick="copySnapLink(${s.id},event)" title="링크 복사" style="color:#64748b">🔗 링크</button>
+        <button class="snap-del-btn" onclick="deleteSnap(${s.id},event)" title="삭제">🗑️ 삭제</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+/* ─── DATA CLEAR ─── */
+async function clearAllData(){
+  if(!confirm('업로드된 데이터를 모두 삭제하시겠습니까?\n이벤트 데이터는 유지됩니다.')) return;
+  ['dataai','sensortower'].forEach(src=>{
+    ['traffic','revenue'].forEach(m=>{ S.data[src][m]=null; });
+  });
+  localStorage.removeItem('dashboard_data_v1');
+  try {
+    await db.collection('dashboard').doc('data').delete();
+    await db.collection('dashboard').doc('data_meta').delete();
+  } catch(e){ console.warn('Firebase 데이터 삭제 실패', e); }
+  ['rangeStart','rangeEnd','tableRangeStart','tableRangeEnd'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  renderCharts(); renderTable(); renderHistSection();
+  ['dataai','sensortower'].forEach(src=>refreshUploadUI(src));
+  toast('데이터가 초기화되었습니다. 파일을 다시 업로드해주세요.','ok');
+}
+
+/* ─── RAW DATA DEBUG ─── */
+function showRawData(){
+  const lines=[];
+  ['dataai','sensortower'].forEach(src=>{
+    ['traffic','revenue'].forEach(metric=>{
+      const d=S.data[src][metric];
+      if(!d?.rows?.length) return;
+      lines.push(`\n■ ${src} / ${metric} (${d.rows.length}행, 파일: ${d.fname||'-'})`);
+      lines.push(`  colMap: ${JSON.stringify(d.colMap)}`);
+      const sample=[...d.rows.slice(0,3),...(d.rows.length>6?['... (중략) ...']:d.rows.slice(3)),...d.rows.slice(-3)];
+      sample.forEach(r=>{
+        if(typeof r==='string'){lines.push('  '+r);return;}
+        const ko=r.knivesout!=null?Math.round(r.knivesout).toLocaleString():'-';
+        const cm=r.codm!=null?Math.round(r.codm).toLocaleString():'-';
+        const df=r.deltaforce!=null?Math.round(r.deltaforce).toLocaleString():'-';
+        const pm=r.pubgm!=null?Math.round(r.pubgm).toLocaleString():'-';
+        lines.push(`  ${r.date}  KO:${ko}  CoDM:${cm}  DF:${df}  PUBGM:${pm}`);
+      });
+    });
+  });
+  if(!lines.length){ alert('저장된 데이터가 없습니다.'); return; }
+  alert('【 저장된 원시 데이터 (샘플) 】\n'+lines.join('\n'));
+}
+
+/* ─── CSV EXPORT (기간 필터 적용) ─── */
+function exportRangeCSV(){
+  const rs=S.range.start, re=S.range.end;
+  const gameKeys=Object.keys(GAMES);
+  const sources=['dataai','sensortower'];
+  const metrics=['traffic','revenue'];
+  const srcLabel={dataai:'data.ai',sensortower:'SensorTower'};
+  const metricLabel={traffic:'Traffic(DAU)',revenue:'Revenue($)'};
+  const cols=[];
+  sources.forEach(src=>{
+    metrics.forEach(metric=>{
+      const d=S.data[src][metric];
+      if(!d?.colMap) return;
+      gameKeys.forEach(gk=>{
+        if(d.colMap[gk]) cols.push({src,metric,gk,label:`[${srcLabel[src]}] ${GAMES[gk].name} ${metricLabel[metric]}`});
+      });
+    });
+  });
+  if(!cols.length){ toastErr('추출할 데이터가 없습니다. 먼저 CSV 파일을 업로드해 주세요.'); return; }
+  const dateSet=new Set();
+  const dataMap={};
+  sources.forEach(src=>{
+    metrics.forEach(metric=>{
+      const d=S.data[src][metric];
+      if(!d?.rows?.length) return;
+      const vis=d.rows.filter(r=>(!rs||r.date>=rs)&&(!re||r.date<=re));
+      const rows=vis.length?vis:d.rows;
+      rows.forEach(r=>{
+        dateSet.add(r.date);
+        gameKeys.forEach(gk=>{
+          if(r[gk]!=null) dataMap[`${src}_${metric}_${gk}_${r.date}`]=r[gk];
+        });
+      });
+    });
+  });
+  const dates=Array.from(dateSet).sort();
+  if(!dates.length){ toastErr('선택한 기간에 데이터가 없습니다.'); return; }
+  const header=['Date',...cols.map(c=>c.label)];
+  const csvRows=[header.join(',')];
+  dates.forEach(date=>{
+    const row=[date,...cols.map(c=>{
+      const v=dataMap[`${c.src}_${c.metric}_${c.gk}_${date}`];
+      return v!=null?Math.round(v):'';
+    })];
+    csvRows.push(row.join(','));
+  });
+  const dateTag=(rs||'start')+'_'+(re||'end');
+  const a=document.createElement('a');
+  a.href='data:text/csv;charset=utf-8,﻿'+encodeURIComponent(csvRows.join('\n'));
+  a.download=`competitor_dashboard_${dateTag}.csv`;
+  a.click();
+  toast(`📥 CSV 추출 완료 (${dates.length}일 × ${cols.length}열)`,'ok');
+}
+
+/* ─── 이벤트 조사 요청 (research_events.py 가 읽어감) ─── */
+async function requestEventResearch(){
+  const rs=S.range.start, re=S.range.end;
+  if(!rs||!re){ toastErr('먼저 조사할 기간을 설정해 주세요.'); return; }
+  if(!confirm(`이 기간의 경쟁사 이벤트 조사를 요청합니다.\n\n기간: ${rs} ~ ${re}\n\n요청을 저장한 뒤, PC에서 research_events.py 를 실행하면\n조사 결과가 이벤트 목록에 자동 추가됩니다. 계속할까요?`)) return;
+  try{
+    await db.collection('dashboard').doc('research_request').set({
+      from:rs, to:re, requestedAt:new Date(), status:'pending'
+    });
+    toast(`🔍 조사 요청 저장됨 (${rs} ~ ${re}). 이제 research_events.py 를 실행하세요.`,'ok');
+  }catch(e){
+    console.warn('조사 요청 저장 실패', e);
+    toastErr('조사 요청 저장 실패: '+(e.message||e));
+  }
+}
+
+/* ─── CSV TEMPLATE ─── */
+function downloadTemplate(){
+  const rows=[['Date','Knives Out','Call of Duty: Mobile','Delta Force','PUBG Mobile']];
+  const base=new Date('2026-04-01');
+  for(let i=0;i<=11;i++){
+    const d=new Date(base); d.setDate(d.getDate()+i);
+    rows.push([d.toISOString().split('T')[0],366419,49894,72007,115991]);
+  }
+  const csv=rows.map(r=>r.join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download='competitor_traffic_template.csv';
+  a.click();
+  toast('CSV 템플릿 다운로드 완료','ok');
+}
+
+/* ─── TOAST ─── */
+function toast(msg,type=''){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast '+(type?type+' ':'')+'show';
+  clearTimeout(t._tid); t._tid=setTimeout(()=>t.classList.remove('show'),3000);
+}
+function toastErr(msg){ toast(msg,'err'); }
+</script>
+</body>
+</html>
