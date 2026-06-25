@@ -226,6 +226,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Ar
 .empty-state{text-align:center;padding:60px;color:#9ca3af;grid-column:1/-1}
 .empty-icon{font-size:44px;margin-bottom:10px}
 
+/* ── GAME COMMENT (편집 가능) ── */
+.game-comment{font-size:12px;color:#374151;line-height:1.7;white-space:pre-wrap;border:1px dashed #d1d5db;border-radius:8px;padding:9px 12px;min-height:36px;cursor:text;transition:all .15s;background:white}
+.game-comment:hover{border-color:#9ca3af;background:#fcfcfd}
+.game-comment:focus{outline:none;border-style:solid;border-color:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,.1)}
+.game-comment:empty:before{content:attr(data-placeholder);color:#9ca3af}
+
 /* ── EVENT ANNOTATION LIST ── */
 .ev-anno-bar{background:white;border-radius:10px;margin-top:12px;border:1px solid #e5e7eb;overflow:hidden}
 .ev-anno-toggle{display:flex;align-items:center;gap:8px;padding:10px 16px;cursor:pointer;user-select:none;transition:background .15s}
@@ -952,6 +958,7 @@ const S = {
   subMetric:{ dataai:'traffic', sensortower:'traffic' },
   filter:{ game:'all', type:'all', dateFrom:'', dateTo:'' },
   events:[],
+  gameComments:{},
   yMax:{},
   pending:null,
   range:{ start:'', end:'', preset:'1m' },
@@ -1154,6 +1161,14 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.warn('이벤트 로드 실패', e);
     const savedEvs = localStorage.getItem(EVENTS_KEY);
     S.events = savedEvs ? JSON.parse(savedEvs) : SEED_EVENTS.map(e=>({...e}));
+  }
+  // Firebase에서 게임별 코멘트 복원
+  try {
+    const cDoc = await db.collection('dashboard').doc('game_comments').get();
+    if(cDoc.exists) S.gameComments = cDoc.data().comments || {};
+  } catch(e){
+    console.warn('코멘트 로드 실패', e);
+    try { const lc=localStorage.getItem('gameComments'); if(lc) S.gameComments=JSON.parse(lc); } catch(_){}
   }
   renderEvents();
 
@@ -2361,21 +2376,58 @@ function setFilter(type,val,btn){
   renderEvents();
 }
 
+/* ─── 게임별 지표 + 코멘트 (이벤트 섹션) ─── */
+function _gmNum(v,isRev){ if(v===null||v===undefined||isNaN(v)) return '-'; return (isRev?'$ ':'')+Math.round(v).toLocaleString('en-US'); }
+function _gmPct(label,n){
+  if(n===null) return `<span style="color:#9ca3af">${label} -</span>`;
+  const c=n>0?'#b91c1c':n<0?'#1d4ed8':'#6b7280';
+  const ar=n>0?'▲':n<0?'▼':'';
+  return `${label} <span style="color:${c};font-weight:700">${ar}${Math.abs(n)}%</span>`;
+}
+// 경쟁사는 data.ai 기준 (PUBGM은 이벤트 섹션 대상 아님)
+function renderGameMetrics(gk){
+  const rs=S.range.start, re=S.range.end;
+  if(!rs||!re) return '';
+  const P=calcPeriods(rs,re);
+  const tD=S.data.dataai.traffic, sD=S.data.dataai.revenue;
+  const val=(d,per,metric)=> (d&&d.colMap&&d.colMap[gk]) ? aggPeriod(d.rows,d.colMap,per.s,per.e,metric)[gk] : null;
+  const pc=(a,b)=> (a===null||b===null||b===0||isNaN(a)||isNaN(b))?null:Math.round((a-b)/b*100);
+  const t=p=>val(tD,p,'traffic'), s=p=>val(sD,p,'revenue');
+  const tBase=t(P.thisMonth), sBase=s(P.thisMonth);
+  if(tBase===null && sBase===null)
+    return `<div style="grid-column:1/-1;font-size:11px;color:#9ca3af;padding:2px 2px 6px">data.ai 지표 없음 (CSV 업로드 시 표시)</div>`;
+  const sep='<span style="color:#9ca3af">, </span>';
+  const row=(emoji,label,base,isRev,fn)=>`<div style="margin:1px 0">${emoji} <b style="color:#374151">${label}</b>: <b>${_gmNum(base,isRev)}</b> <span style="color:#9ca3af">（</span>${_gmPct('MoM',pc(fn(P.thisMonth),fn(P.lastMonth)))}${sep}${_gmPct('QoQ',pc(fn(P.thisQ),fn(P.lastQ)))}${sep}${_gmPct('YoY(Monthly)',pc(fn(P.thisMonth),fn(P.lyMonth)))}${sep}${_gmPct('YoY(Quarterly)',pc(fn(P.thisQ),fn(P.lyQ)))}<span style="color:#9ca3af">）</span></div>`;
+  return `<div style="grid-column:1/-1;background:#f9fafb;border:1px solid #eef0f3;border-radius:8px;padding:9px 13px;font-size:12px;line-height:1.9;margin-bottom:6px">
+    ${row('👥','Traffic',tBase,false,t)}
+    ${row('💰','Sales',sBase,true,s)}
+  </div>`;
+}
+function renderGameComment(gk){
+  const raw=(S.gameComments&&S.gameComments[gk])||'';
+  const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return `<div style="grid-column:1/-1;margin:0 0 12px">
+    <div class="game-comment" contenteditable="true" data-game="${gk}" data-placeholder="✍️ 클릭하여 코멘트 입력 — 이 기간 데이터가 이렇게 착지한 배경·이벤트 분석" onblur="saveGameComment('${gk}',this)">${esc(raw)}</div>
+  </div>`;
+}
+async function saveGameComment(gk,el){
+  const v=el.innerText.trim();
+  if(!S.gameComments) S.gameComments={};
+  if(v===(S.gameComments[gk]||'')) return;   // 변경 없으면 저장 생략
+  S.gameComments[gk]=v;
+  try{
+    await db.collection('dashboard').doc('game_comments').set({comments:S.gameComments, updatedAt:new Date()});
+    toast('💬 코멘트 저장됨','ok');
+  }catch(e){
+    console.warn('코멘트 저장 실패',e);
+    try{ localStorage.setItem('gameComments',JSON.stringify(S.gameComments)); }catch(_){}
+  }
+}
+
 function renderEvents(){
   const grid=document.getElementById('evGrid');
-  let list=S.events.filter(ev=>{
-    if(S.filter.game!=='all'&&ev.game!==S.filter.game) return false;
-    if(S.filter.type!=='all'&&ev.type!==S.filter.type) return false;
-    // 상단 그래프 기간과 겹치는 이벤트만 표시 (시작일~종료일 기준 overlap)
-    const rs=S.range.start, re=S.range.end;
-    if(rs&&re){ const evEnd=ev.endDate||ev.date; if(evEnd<rs||ev.date>re) return false; }
-    return true;
-  });
-  document.getElementById('evCount').textContent=`${list.length}개 이벤트`;
-  if(!list.length){
-    grid.innerHTML='<div class="empty-state"><div class="empty-icon">🔍</div><div>필터 조건에 맞는 이벤트가 없습니다</div></div>';
-    return;
-  }
+  const inRange=ev=>{ const rs=S.range.start,re=S.range.end; if(!rs||!re) return true; const evEnd=ev.endDate||ev.date; return !(evEnd<rs||ev.date>re); };
+  const matchType=ev=> S.filter.type==='all'||ev.type===S.filter.type;
   const tLabel={collab:'콜라보',update:'업데이트',event:'이벤트'};
   const tEmoji={collab:'🤝',update:'🔄',event:'🎯'};
   const renderCard=ev=>{
@@ -2402,25 +2454,26 @@ function renderEvents(){
       </div>
     </div>`;
   };
-  if(S.filter.game==='all'){
-    const gameOrder=['knivesout','codm','deltaforce'];
-    let html='';
-    gameOrder.forEach(gk=>{
-      const g=GAMES[gk];
-      const items=list.filter(ev=>ev.game===gk).sort((a,b)=>b.date.localeCompare(a.date));
-      if(!items.length) return;
-      html+=`<div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;margin:8px 0 4px">
+  const allGames=['knivesout','codm','deltaforce'];
+  const games = S.filter.game==='all' ? allGames : (allGames.includes(S.filter.game)?[S.filter.game]:[]);
+  let total=0, html='';
+  games.forEach(gk=>{
+    const g=GAMES[gk];
+    const items=S.events.filter(ev=>ev.game===gk&&matchType(ev)&&inRange(ev)).sort((a,b)=>b.date.localeCompare(a.date));
+    total+=items.length;
+    html+=`<div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;margin:14px 0 6px">
         <div style="width:4px;height:20px;background:${g.color};border-radius:2px"></div>
-        <span style="font-size:13px;font-weight:700;color:${g.color}">${g.name}</span>
+        <span style="font-size:14px;font-weight:700;color:${g.color}">${g.name}</span>
         <span style="font-size:11px;color:#9ca3af">${items.length}건</span>
         <div style="flex:1;height:1px;background:#e5e7eb"></div>
       </div>`;
-      html+=items.map(renderCard).join('');
-    });
-    grid.innerHTML=html;
-  } else {
-    grid.innerHTML=list.sort((a,b)=>b.date.localeCompare(a.date)).map(renderCard).join('');
-  }
+    html+=renderGameMetrics(gk);
+    html+=renderGameComment(gk);
+    html+= items.length ? items.map(renderCard).join('')
+      : `<div style="grid-column:1/-1;font-size:12px;color:#9ca3af;padding:2px 2px 8px">이 기간에 등록된 이벤트가 없습니다.</div>`;
+  });
+  document.getElementById('evCount').textContent=`${total}개 이벤트`;
+  grid.innerHTML = html || '<div class="empty-state"><div class="empty-icon">🔍</div><div>표시할 게임이 없습니다</div></div>';
 }
 
 let _editEvId=null;
