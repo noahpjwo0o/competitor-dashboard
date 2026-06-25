@@ -666,7 +666,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Ar
         </div>
         <!-- 날짜 필터 제거: 상단 그래프의 기간 설정을 따름 -->
       </div>
-      <button class="add-btn" onclick="toggleAddForm()">+ 이벤트 추가</button>
+      <div style="display:flex;gap:8px;align-items:flex-start">
+        <button class="fchip" id="showHiddenBtn" onclick="toggleShowHidden()" style="white-space:nowrap">👁 숨긴 항목 보기 (0)</button>
+        <button class="add-btn" onclick="toggleAddForm()">+ 이벤트 추가</button>
+      </div>
     </div>
 
     <!-- Add Event Form -->
@@ -958,6 +961,9 @@ const S = {
   subMetric:{ dataai:'traffic', sensortower:'traffic' },
   filter:{ game:'all', type:'all', dateFrom:'', dateTo:'' },
   events:[],
+  deletedIds:[],
+  hiddenIds:[],
+  showHidden:false,
   gameComments:{},
   yMax:{},
   pending:null,
@@ -1146,9 +1152,11 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     const evDoc = await db.collection('dashboard').doc('events').get();
     if(evDoc.exists){
       S.events = evDoc.data().events || [];
-      // 새 SEED_EVENTS ID가 Firebase에 없으면 자동으로 머지 (수동 편집 내용은 보존)
+      S.deletedIds = evDoc.data().deletedSeedIds || [];
+      // 새 SEED_EVENTS ID가 Firebase에 없으면 자동으로 머지 (단, 사용자가 삭제한 ID는 제외)
       const existingIds = new Set(S.events.map(e=>e.id));
-      const newOnes = SEED_EVENTS.filter(e=>!existingIds.has(e.id));
+      const deletedSet = new Set(S.deletedIds);
+      const newOnes = SEED_EVENTS.filter(e=>!existingIds.has(e.id) && !deletedSet.has(e.id));
       if(newOnes.length){
         S.events = [...S.events, ...newOnes.map(e=>({...e}))];
         try { await db.collection('dashboard').doc('events').set({events:S.events, updatedAt:new Date()}); } catch(err){}
@@ -1575,6 +1583,7 @@ function addDays(dateStr, days){
 // 프리셋 버튼 클릭
 function setPreset(p){
   S.range.preset = p;
+  S.hiddenIds = [];   // 새 기간 조회 시 숨김 해제 (스냅샷 복원은 이후 별도 적용)
   const { min, max } = getDataDateRange();
 
   // 프리셋 버튼 활성화
@@ -1611,6 +1620,7 @@ function onRangeInputChange(){
 function applyRange(){
   S.range.start = document.getElementById('rangeStart').value;
   S.range.end   = document.getElementById('rangeEnd').value;
+  S.hiddenIds = [];   // 새 기간 조회 시 숨김 해제
   _commitRange();
 }
 
@@ -2415,6 +2425,16 @@ async function saveGameComment(gk,el){
   if(!S.gameComments) S.gameComments={};
   if(v===(S.gameComments[gk]||'')) return;   // 변경 없으면 저장 생략
   S.gameComments[gk]=v;
+  // 활성 스냅샷이 있으면 그 스냅샷에 저장(월별 코멘트 보존), 없으면 전역 저장
+  if(_activeSnapId){
+    const snap=S.snapshots.find(s=>s.id===_activeSnapId);
+    if(snap){
+      snap.state.gameComments={...S.gameComments};
+      await saveSnaps();
+      toast('💬 코멘트 저장됨 (스냅샷)','ok');
+      return;
+    }
+  }
   try{
     await db.collection('dashboard').doc('game_comments').set({comments:S.gameComments, updatedAt:new Date()});
     toast('💬 코멘트 저장됨','ok');
@@ -2424,22 +2444,31 @@ async function saveGameComment(gk,el){
   }
 }
 
+function toggleHideEvent(id){
+  const i=S.hiddenIds.indexOf(id);
+  if(i>=0) S.hiddenIds.splice(i,1); else S.hiddenIds.push(id);
+  renderEvents();
+  toast(i>=0?'다시 표시됩니다.':'이 보기에서 숨겼습니다 (스냅샷 저장 시 유지).','ok');
+}
+function toggleShowHidden(){ S.showHidden=!S.showHidden; renderEvents(); }
+
 function renderEvents(){
   const grid=document.getElementById('evGrid');
   const inRange=ev=>{ const rs=S.range.start,re=S.range.end; if(!rs||!re) return true; const evEnd=ev.endDate||ev.date; return !(evEnd<rs||ev.date>re); };
   const matchType=ev=> S.filter.type==='all'||ev.type===S.filter.type;
   const tLabel={collab:'콜라보',update:'업데이트',event:'이벤트'};
   const tEmoji={collab:'🤝',update:'🔄',event:'🎯'};
-  const renderCard=ev=>{
+  const renderCard=(ev,isHidden)=>{
     const g=GAMES[ev.game]||{name:ev.game,color:'#888',bg:'#f3f4f6'};
     const dateStr=ev.endDate&&ev.endDate!==ev.date?`${ev.date} ~ ${ev.endDate}`:ev.date;
     const imgEl=ev.img?`<div style="padding:0 15px 10px"><img src="${ev.img}" style="width:100%;border-radius:6px;aspect-ratio:16/9;object-fit:cover;display:block" onerror="this.parentElement.remove()" alt=""></div>`
       :`<div class="ev-placeholder" style="--gbg:${g.bg}">${tEmoji[ev.type]||'🎮'}</div>`;
-    return `<div class="ev-card">
+    return `<div class="ev-card"${isHidden?' style="opacity:.5"':''}>
       <div class="ev-top" style="--gc:${g.color}">
         <div class="ev-meta">
           <span class="game-pill" style="background:${g.bg};color:${g.color}">${g.name}</span>
           <span class="type-badge ${ev.type}">${tEmoji[ev.type]} ${tLabel[ev.type]}</span>
+          ${isHidden?'<span style="font-size:9px;font-weight:800;color:#9ca3af;background:#f3f4f6;padding:1px 6px;border-radius:4px">숨김</span>':''}
           <span class="ev-date">${dateStr}</span>
         </div>
         <div class="ev-title">${ev.title}</div>
@@ -2448,6 +2477,9 @@ function renderEvents(){
       ${imgEl}
       <div class="ev-tags">${(ev.tags||[]).map(t=>`<span class="ev-tag">#${t}</span>`).join('')}</div>
       <div class="ev-footer">
+        ${isHidden
+          ? `<button class="btn-icon" onclick="toggleHideEvent(${ev.id})" title="다시 표시">👁</button>`
+          : `<button class="btn-icon" onclick="toggleHideEvent(${ev.id})" title="이 보기에서 숨기기">🙈</button>`}
         <button class="btn-icon" onclick="openEditEvModal(${ev.id})" title="수정">✏️</button>
         <button class="btn-icon" onclick="delEvent(${ev.id})" title="삭제">🗑️</button>
         ${ev.source?`<a class="btn-icon" href="${ev.source}" target="_blank" rel="noopener" title="참조 링크">🔗</a>`:''}
@@ -2459,21 +2491,26 @@ function renderEvents(){
   let total=0, html='';
   games.forEach(gk=>{
     const g=GAMES[gk];
-    const items=S.events.filter(ev=>ev.game===gk&&matchType(ev)&&inRange(ev)).sort((a,b)=>b.date.localeCompare(a.date));
-    total+=items.length;
+    const all=S.events.filter(ev=>ev.game===gk&&matchType(ev)&&inRange(ev)).sort((a,b)=>b.date.localeCompare(a.date));
+    const visible=all.filter(ev=>!S.hiddenIds.includes(ev.id));
+    const hidden=all.filter(ev=>S.hiddenIds.includes(ev.id));
+    total+=visible.length;
     html+=`<div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;margin:14px 0 6px">
         <div style="width:4px;height:20px;background:${g.color};border-radius:2px"></div>
         <span style="font-size:14px;font-weight:700;color:${g.color}">${g.name}</span>
-        <span style="font-size:11px;color:#9ca3af">${items.length}건</span>
+        <span style="font-size:11px;color:#9ca3af">${visible.length}건${hidden.length?` · ${hidden.length} 숨김`:''}</span>
         <div style="flex:1;height:1px;background:#e5e7eb"></div>
       </div>`;
     html+=renderGameMetrics(gk);
     html+=renderGameComment(gk);
-    html+= items.length ? items.map(renderCard).join('')
-      : `<div style="grid-column:1/-1;font-size:12px;color:#9ca3af;padding:2px 2px 8px">이 기간에 등록된 이벤트가 없습니다.</div>`;
+    const cards = visible.map(ev=>renderCard(ev,false)).join('')
+                + (S.showHidden ? hidden.map(ev=>renderCard(ev,true)).join('') : '');
+    html+= cards || `<div style="grid-column:1/-1;font-size:12px;color:#9ca3af;padding:2px 2px 8px">이 기간에 표시할 이벤트가 없습니다.</div>`;
   });
   document.getElementById('evCount').textContent=`${total}개 이벤트`;
   grid.innerHTML = html || '<div class="empty-state"><div class="empty-icon">🔍</div><div>표시할 게임이 없습니다</div></div>';
+  const shBtn=document.getElementById('showHiddenBtn');
+  if(shBtn){ shBtn.classList.toggle('active',S.showHidden); shBtn.textContent=`${S.showHidden?'🙈 숨긴 항목 가리기':'👁 숨긴 항목 보기'} (${S.hiddenIds.length})`; }
 }
 
 let _editEvId=null;
@@ -2567,13 +2604,14 @@ function addEvent(){
 function delEvent(id){
   if(!confirm('이 이벤트를 삭제하시겠습니까?')) return;
   S.events=S.events.filter(e=>e.id!==id);
+  if(!S.deletedIds.includes(id)) S.deletedIds.push(id);  // 새로고침 시 재추가 방지(tombstone)
   saveEvs(); renderEvents();
   toast('삭제되었습니다.');
 }
 
 async function saveEvs(){
   try {
-    await db.collection('dashboard').doc('events').set({events:S.events, updatedAt:new Date()});
+    await db.collection('dashboard').doc('events').set({events:S.events, deletedSeedIds:S.deletedIds, updatedAt:new Date()});
   } catch(e){
     console.warn('이벤트 Firebase 저장 실패', e);
     localStorage.setItem(EVENTS_KEY,JSON.stringify(S.events));
@@ -2583,6 +2621,7 @@ async function saveEvs(){
 function resetEvents(){
   if(!confirm('이벤트를 초기 데이터로 초기화하시겠습니까?')) return;
   S.events=SEED_EVENTS.map(e=>({...e}));
+  S.deletedIds=[];   // 삭제 기록도 초기화
   saveEvs(); renderEvents();
   toast('이벤트가 초기화되었습니다.','ok');
 }
@@ -2623,7 +2662,9 @@ async function saveSnap(){
       tableRange:  { ...S.tableRange },
       selectedAnnoIds: [...S.selectedAnnoIds],
       filter:      { ...S.filter },
-      yMax:        { ...S.yMax }
+      yMax:        { ...S.yMax },
+      gameComments: { ...S.gameComments },
+      hiddenIds:   [...S.hiddenIds]
     }
   };
   S.snapshots.unshift(snap);
@@ -2651,6 +2692,8 @@ function applySnap(id){
   S.selectedAnnoIds = new Set(st.selectedAnnoIds || []);
   // 필터 복원
   if(st.filter) S.filter = { ...st.filter };
+  // 게임별 코멘트 복원 (스냅샷에 저장된 경우)
+  if(st.gameComments) S.gameComments = { ...st.gameComments };
   // Y축 최고값 복원
   if(st.yMax){ S.yMax = { ...st.yMax }; Object.entries(S.yMax).forEach(([k,v])=>{ const el=document.getElementById('ymax-'+k); if(el) el.value=v||''; }); }
   // 프리셋 버튼 UI 업데이트
@@ -2660,6 +2703,8 @@ function applySnap(id){
     const el = document.getElementById(eid);
     if(el) el.value = eid === 'rangeStart' ? (S.range.start||'') : (S.range.end||'');
   });
+  // 숨긴 이벤트 복원 (setPreset이 초기화한 뒤에 적용)
+  S.hiddenIds = st.hiddenIds ? [...st.hiddenIds] : [];
   // 재렌더
   renderCharts(); renderTable(); renderEvAnno(); renderEvents();
   _activeSnapId = id;
